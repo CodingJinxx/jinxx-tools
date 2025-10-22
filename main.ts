@@ -2,6 +2,10 @@ import { Notice, Plugin, TFile } from 'obsidian';
 import { SimpleSuggester } from './src/ui/SimpleSuggester';
 import { CourseService } from './src/services/CourseService';
 import { JinxxToolsSettings, DEFAULT_SETTINGS, JinxxToolsSettingTab } from './src/settings/SettingTab';
+import { ScanService } from './src/services/ScanService';
+import { LiveScanMonitorModal } from './src/ui/LiveScanMonitorModal';
+import { PromptModal } from './src/ui/PromptModal';
+import * as path from 'path';
 
 export default class JinxxToolsPlugin extends Plugin {
 	settings: JinxxToolsSettings;
@@ -65,6 +69,15 @@ export default class JinxxToolsPlugin extends Plugin {
 				const res = await cs.renameCourse();
 				if (res.ok) new Notice(`Renamed course — ${res.compact}`);
 				else if (res.reason !== 'cancelled' && res.reason !== 'no-old-name' && res.reason !== 'no-new-name') new Notice(`Rename failed: ${res.reason}`);
+			}
+		});
+
+		// Scan command
+		this.addCommand({
+			id: 'jinxx-scan',
+			name: 'Scan',
+			callback: async () => {
+				await this.handleScan();
 			}
 		});
 
@@ -180,6 +193,121 @@ export default class JinxxToolsPlugin extends Plugin {
 		const res = await cs.restoreCourse({ courseName: chosenCourse });
 		if (res.ok) new Notice(`Restored ${chosenCourse} from ${res.snapshot}`);
 		else if (res.reason !== 'cancelled' && res.reason !== 'no-snapshots') new Notice(`Restore failed: ${res.reason}`);
+	}
+
+	async handleScan() {
+		// Check if scanner folder is configured
+		if (!this.settings.Scans.scanFolderPath) {
+			new Notice('Scanner folder not configured. Please configure it in Settings → Scans.');
+			return;
+		}
+
+		// Step 1: Select course
+		const courseService = new CourseService(this);
+		const courses = await courseService.discoverCourses();
+
+		if (courses.length === 0) {
+			new Notice('No courses found. Create a course first.');
+			return;
+		}
+
+		const courseSugg = new SimpleSuggester(
+			this.app,
+			courses,
+			(c: string) => c,
+			'Select course for scan'
+		);
+
+		const selectedCourse = await courseSugg.openAndChoose();
+		if (!selectedCourse) return;
+
+		const courseName = String(selectedCourse);
+		const universityFolder = this.settings.BaseFolders.University || '20_University';
+		const courseScansFolder = `${universityFolder}/Scans/${courseName}`;
+
+		// Ensure scans folder exists
+		const abstractFolder = this.app.vault.getAbstractFileByPath(courseScansFolder);
+		if (!abstractFolder) {
+			try {
+				await this.app.vault.createFolder(courseScansFolder);
+			} catch (e) {
+				new Notice(`Failed to create scans folder: ${(e as any).message}`);
+				return;
+			}
+		}
+
+		// Step 2: Create new or append to existing
+		const pdfFiles = this.app.vault.getFiles().filter(
+			f => f.path.startsWith(courseScansFolder) && f.extension === 'pdf'
+		);
+
+		const modeOptions = ['📄 Create New Scan', '📎 Append to Existing'];
+		const modeSugg = new SimpleSuggester(
+			this.app,
+			modeOptions,
+			(opt: string) => opt,
+			'Create new scan or append to existing?'
+		);
+
+		const modeChoice = await modeSugg.openAndChoose();
+		if (!modeChoice) return;
+
+		let outputMode: 'create' | 'append';
+		let outputPath: string;
+
+		if (String(modeChoice) === '📄 Create New Scan') {
+			// Prompt for filename
+			const prompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
+			const filename = await prompt.openPrompt();
+			if (!filename) return;
+
+			const sanitizedFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+			const outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+
+			// Check if already exists
+			if (this.app.vault.getAbstractFileByPath(outputVaultPath)) {
+				new Notice('A scan with that name already exists');
+				return;
+			}
+
+			outputMode = 'create';
+			const adapter = this.app.vault.adapter as any;
+			const vaultPath = adapter.basePath || '';
+			outputPath = path.join(vaultPath, outputVaultPath);
+		} else {
+			// Select existing PDF
+			if (pdfFiles.length === 0) {
+				new Notice('No existing scans found. Please create a new one.');
+				return;
+			}
+
+			const pdfSugg = new SimpleSuggester(
+				this.app,
+				pdfFiles.map(f => f.path),
+				(p: string) => path.basename(p),
+				'Select scan to append to'
+			);
+
+			const selectedPdf = await pdfSugg.openAndChoose();
+			if (!selectedPdf) return;
+
+			outputMode = 'append';
+			const adapter = this.app.vault.adapter as any;
+			const vaultPath = adapter.basePath || '';
+			outputPath = path.join(vaultPath, String(selectedPdf));
+		}
+
+		// Step 3: Open live monitoring modal
+		const scanService = new ScanService(this.app, this);
+		const modal = new LiveScanMonitorModal(
+			this.app,
+			this,
+			scanService,
+			courseName,
+			outputMode,
+			outputPath
+		);
+		modal.open();
 	}
 
 	async loadSettings() {

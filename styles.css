@@ -6,3 +6,106 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+/* Scan Session Modal */
+.jinxx-scan-session-modal {
+  min-width: 600px;
+}
+
+.jinxx-file-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1em;
+}
+
+.jinxx-file-row {
+  display: flex;
+  align-items: center;
+  padding: 0.5em;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jinxx-file-row input[type="checkbox"] {
+  margin-right: 0.5em;
+}
+
+.jinxx-file-info {
+  flex: 1;
+}
+
+.jinxx-file-size {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.jinxx-file-buttons {
+  display: flex;
+  gap: 0.25em;
+}
+
+.jinxx-file-buttons button {
+  padding: 0.25em 0.5em;
+}
+
+.jinxx-target-selection {
+  margin-bottom: 1em;
+}
+
+.jinxx-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+}
+
+/* Live Scan Monitor Modal */
+.jinxx-live-scan-modal {
+  min-width: 500px;
+  text-align: center;
+}
+
+.jinxx-scan-info {
+  margin: 0.5em 0;
+  color: var(--text-muted);
+}
+
+.jinxx-scan-instructions {
+  margin: 1.5em 0;
+  font-size: 1.1em;
+}
+
+.jinxx-scan-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 1em;
+  margin-top: 2em;
+}
+
+.jinxx-scan-buttons button {
+  padding: 0.75em 1.5em;
+  font-size: 1.1em;
+}
+
+.jinxx-page-count {
+  margin: 2em 0;
+  padding: 2em;
+  background: var(--background-secondary);
+  border-radius: 10px;
+}
+
+.jinxx-page-count-number {
+  font-size: 4em;
+  font-weight: bold;
+  color: var(--interactive-accent);
+}
+
+.jinxx-page-count-label {
+  font-size: 1.2em;
+  margin-top: 0.5em;
+  color: var(--text-muted);
+}
+
+.jinxx-scan-status {
+  margin: 1em 0;
+  font-size: 1.1em;
+  color: var(--text-accent);
+}

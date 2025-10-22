@@ -31,6 +31,15 @@ export interface JinxxToolsSettings {
   };
   Scans: {
     WatchFolders: string[];
+    scanFolderPath: string;
+    stabilityDelayMs: number;
+    stabilityRetries: number;
+    keepOriginals: boolean;
+    archiveAfterMerge: boolean;
+    archiveFolderPath: string;
+    mergeLibrary: 'pdf-lib' | 'ghostscript';
+    makeBackupBeforeAppend: boolean;
+    namingPattern: string;
   };
 }
 
@@ -71,6 +80,15 @@ export const DEFAULT_SETTINGS: JinxxToolsSettings = {
   },
   Scans: {
     WatchFolders: [],
+    scanFolderPath: '',
+    stabilityDelayMs: 2000,
+    stabilityRetries: 4,
+    keepOriginals: true,
+    archiveAfterMerge: false,
+    archiveFolderPath: '',
+    mergeLibrary: 'pdf-lib',
+    makeBackupBeforeAppend: true,
+    namingPattern: '{course}_{YYYY-MM-DD}_{counter}.pdf',
   },
 };
 
@@ -325,14 +343,134 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
         })
       );
 
-    // Scans Watch Folders
+    // Scans
     containerEl.createEl('h3', { text: 'Scans' });
     containerEl.createEl('p', {
-      text: 'Manage folders to watch for scanning.',
+      text: 'Configure scan session settings and watch folders.',
       cls: 'setting-item-description',
     });
 
     const scansDiv = containerEl.createDiv({ cls: 'jinxx-scans' });
+
+    // Scanner folder path
+    new Setting(scansDiv)
+      .setName('Scanner Folder Path')
+      .setDesc('Root folder where scanner saves PDFs (e.g., C:\\Scans\\Canon)')
+      .addText((text) =>
+        text
+          .setPlaceholder('C:\\Scans\\Canon')
+          .setValue(this.plugin.settings.Scans.scanFolderPath)
+          .onChange(async (value) => {
+            this.plugin.settings.Scans.scanFolderPath = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Stability delay
+    new Setting(scansDiv)
+      .setName('Stability Delay (ms)')
+      .setDesc('Wait time between file size checks to ensure file is complete')
+      .addText((text) =>
+        text
+          .setPlaceholder('2000')
+          .setValue(String(this.plugin.settings.Scans.stabilityDelayMs))
+          .onChange(async (value) => {
+            const num = parseInt(value);
+            if (!isNaN(num) && num > 0) {
+              this.plugin.settings.Scans.stabilityDelayMs = num;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    // Stability retries
+    new Setting(scansDiv)
+      .setName('Stability Retries')
+      .setDesc('Number of times to retry stability check if file is locked')
+      .addText((text) =>
+        text
+          .setPlaceholder('4')
+          .setValue(String(this.plugin.settings.Scans.stabilityRetries))
+          .onChange(async (value) => {
+            const num = parseInt(value);
+            if (!isNaN(num) && num >= 0) {
+              this.plugin.settings.Scans.stabilityRetries = num;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    // Keep originals
+    new Setting(scansDiv)
+      .setName('Keep Original Files')
+      .setDesc('Keep original single-page PDFs after merging')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.Scans.keepOriginals)
+          .onChange(async (value) => {
+            this.plugin.settings.Scans.keepOriginals = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Archive after merge
+    new Setting(scansDiv)
+      .setName('Archive After Merge')
+      .setDesc('Move original files to archive folder after successful merge')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.Scans.archiveAfterMerge)
+          .onChange(async (value) => {
+            this.plugin.settings.Scans.archiveAfterMerge = value;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    // Archive folder path (only show if archiveAfterMerge is enabled)
+    if (this.plugin.settings.Scans.archiveAfterMerge) {
+      new Setting(scansDiv)
+        .setName('Archive Folder Path')
+        .setDesc('Where to move original files (leave empty for {scanFolder}/archive)')
+        .addText((text) =>
+          text
+            .setPlaceholder('{scanFolder}/archive')
+            .setValue(this.plugin.settings.Scans.archiveFolderPath)
+            .onChange(async (value) => {
+              this.plugin.settings.Scans.archiveFolderPath = value;
+              await this.plugin.saveSettings();
+            })
+        );
+    }
+
+    // Make backup before append
+    new Setting(scansDiv)
+      .setName('Backup Before Append')
+      .setDesc('Create backup of target PDF before appending new pages')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.Scans.makeBackupBeforeAppend)
+          .onChange(async (value) => {
+            this.plugin.settings.Scans.makeBackupBeforeAppend = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Naming pattern
+    new Setting(scansDiv)
+      .setName('Naming Pattern')
+      .setDesc('Pattern for new scan PDFs: {course}, {YYYY-MM-DD}, {counter}')
+      .addText((text) =>
+        text
+          .setPlaceholder('{course}_{YYYY-MM-DD}_{counter}.pdf')
+          .setValue(this.plugin.settings.Scans.namingPattern)
+          .onChange(async (value) => {
+            this.plugin.settings.Scans.namingPattern = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Watch Folders section
     const watchFolders = this.plugin.settings.Scans.WatchFolders;
     
     if (watchFolders.length === 0) {

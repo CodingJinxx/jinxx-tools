@@ -31,6 +31,11 @@ export class CourseService {
     return out;
   }
 
+  async discoverCourses(): Promise<string[]> {
+    const courses = await this.listCourses();
+    return courses.map(c => c.name);
+  }
+
   /**
    * Create a course: prompt for name, create note and attachments/notes/scans folders,
    * create notes subfolders per config NotesSubfolderOptions if user selects.

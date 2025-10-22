@@ -137,8 +137,8 @@ export class LectureOptionEditorModal extends Modal {
       this.app,
       this.option.Label || this.optionKey,
       this.option.Folders,
-      async (folders) => {
-        this.option.Folders = folders;
+      async (folders: Record<string, unknown>) => {
+        this.option.Folders = folders as any;
         new Notice('Folders updated (remember to save)');
       }
     );
@@ -168,14 +168,13 @@ export class LectureOptionEditorModal extends Modal {
     this.close();
   }
 
-  private countFolders(folders: Record<string, any>): number {
+  private countFolders(folders: Record<string, unknown>): number {
     let count = 0;
-    const countRecursive = (obj: Record<string, any>) => {
+    const countRecursive = (obj: Record<string, unknown>) => {
       for (const key of Object.keys(obj)) {
         count++;
-        if (obj[key] && typeof obj[key] === 'object') {
-          countRecursive(obj[key]);
-        }
+        const v = obj[key];
+        if (v && typeof v === 'object') countRecursive(v as Record<string, unknown>);
       }
     };
     countRecursive(folders);

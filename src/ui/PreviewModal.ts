@@ -12,7 +12,7 @@ export class PreviewModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
-    const h = contentEl.createEl('h3', { text: this.title });
+    contentEl.createEl('h3', { text: this.title });
     const pre = contentEl.createEl('pre', { text: this.content });
     pre.style.maxHeight = '60vh';
     pre.style.overflow = 'auto';

@@ -1,4 +1,5 @@
-import { App, TFile, Notice, Plugin } from 'obsidian';
+import { App, TFile, TFolder, Notice, Plugin } from 'obsidian';
+import type { CourseTemplate } from '../settings/SettingTab';
 import { ConfigService } from './ConfigService';
 import { ensureFolder, deleteFolderRecursively, buildCompactSummary, Summary } from '../utils/file';
 import { PromptModal } from '../ui/PromptModal';
@@ -18,7 +19,8 @@ export class CourseService {
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
-    this.app = (plugin as any).app as App;
+    // Plugin type doesn't expose app; cast via unknown to a shaped object with app
+    this.app = (plugin as unknown as { app: App }).app;
     this.cfg = new ConfigService(plugin);
   }
 
@@ -61,9 +63,9 @@ export class CourseService {
 
     // check if any of the paths exist
     const existingNote = this.app.vault.getAbstractFileByPath(courseFilePath);
-    const existingAttachments = this.app.vault.getAbstractFileByPath(courseAttachmentsFolderPath);
-    const existingNotes = this.app.vault.getAbstractFileByPath(courseNotesFolderPath);
-    const existingScans = this.app.vault.getAbstractFileByPath(courseScansFolderPath);
+    const existingAttachments = this.app.vault.getAbstractFileByPath(courseAttachmentsFolderPath) as TFolder | null;
+  const existingNotes = this.app.vault.getAbstractFileByPath(courseNotesFolderPath) as TFolder | null;
+  const existingScans = this.app.vault.getAbstractFileByPath(courseScansFolderPath) as TFolder | null;
 
     if (existingNote || existingAttachments || existingNotes || existingScans) {
       // If something exists, we should not automatically overwrite — return failure and let UI handle choices
@@ -76,7 +78,7 @@ export class CourseService {
       let noteContent = `# ${courseName}\n\n*Course note for ${courseName}*`;
       let chosenTemplateKey: string | null = null;
       try {
-        const templatesMap = (config && config.Templates && config.Templates.Course) ? config.Templates.Course : null;
+  const templatesMap: Record<string, any> | null = (config && config.Templates && config.Templates.Course) ? config.Templates.Course : null;
         if (templatesMap) {
           const entries = Object.entries(templatesMap) as Array<[string, { Label?: string; TemplateFile?: string; NotesSubfolderOption?: string }]>
           if (entries.length > 0) {
@@ -89,7 +91,7 @@ export class CourseService {
             const chosen = await sugg.openAndChoose();
             if (chosen && chosen !== '(None)') {
               chosenTemplateKey = String(chosen);
-              const tdef = (templatesMap as any)[chosenTemplateKey];
+                const tdef = templatesMap ? templatesMap[chosenTemplateKey] : null;
               if (tdef && tdef.TemplateFile) {
                 const templatesFolder = (config && config.BaseFolders && config.BaseFolders.Templates) || '90_Templates';
                 const templatePath = `${templatesFolder}/${tdef.TemplateFile}`;
@@ -118,76 +120,77 @@ export class CourseService {
       // If Templater plugin is installed, attempt to invoke its API to render the template variables (best-effort)
       try {
         // Templater detection: check common plugin keys and look for an API object
-        const pluginsAny: any = (this.app as any).plugins || {};
         const pluginCandidates = ['templater-obsidian', 'templater', 'templater-obsidian-plugin'];
-        let templaterInstance: any = null;
-        if (pluginsAny.plugins) {
-          for (const key of pluginCandidates) {
-            if (pluginsAny.plugins[key]) { 
-              templaterInstance = pluginsAny.plugins[key]; 
-              console.log('Found Templater plugin:', key);
-              break; 
-            }
+        // Access app.plugins.plugins (the actual plugin registry)
+        const pluginsHost = this.app as unknown as { plugins?: { plugins?: Record<string, unknown>; enabledPlugins?: Set<string> } };
+        const pluginsRegistry = pluginsHost.plugins?.plugins || {};
+        const enabledPlugins = pluginsHost.plugins?.enabledPlugins || new Set<string>();
+        let templaterInstance: unknown = null;
+
+        for (const key of pluginCandidates) {
+          if (pluginsRegistry && Object.prototype.hasOwnProperty.call(pluginsRegistry, key)) {
+            templaterInstance = pluginsRegistry[key];
+            console.debug('Found Templater plugin:', key);
+            break;
           }
         }
-        if (!templaterInstance && (this.app as any).plugins && (this.app as any).plugins.enabledPlugins) {
-          // newer Obsidian plugin store shape: enabledPlugins is a Set
-          for (const enabledItem of Array.from((this.app as any).plugins.enabledPlugins || []) as any[]) {
+
+        if (!templaterInstance && enabledPlugins && enabledPlugins.size > 0) {
+          for (const enabledItem of Array.from(enabledPlugins)) {
             const enabled = String(enabledItem);
-            if (pluginCandidates.includes(enabled)) {
-              templaterInstance = (this.app as any).plugins.plugins && (this.app as any).plugins.plugins[enabled];
-              if (templaterInstance) {
-                console.log('Found Templater plugin (via enabledPlugins):', enabled);
-                break;
-              }
+            if (pluginCandidates.includes(enabled) && Object.prototype.hasOwnProperty.call(pluginsRegistry, enabled)) {
+              templaterInstance = pluginsRegistry[enabled];
+              console.debug('Found Templater plugin (via enabledPlugins):', enabled);
+              break;
             }
           }
         }
 
         if (templaterInstance) {
-          console.log('Templater instance found, checking for API...');
-          console.log('Templater keys:', Object.keys(templaterInstance));
-          
-          // Try different API patterns
-          if (templaterInstance.templater?.overwrite_file_commands) {
-            console.log('Using templater.overwrite_file_commands');
-            await templaterInstance.templater.overwrite_file_commands(createdFile);
-            new Notice('Templater: template rendered successfully');
-          } else if (templaterInstance.templater?.append_template_to_active_file) {
-            console.log('Using templater.append_template_to_active_file');
-            await templaterInstance.templater.overwrite_active_file_commands();
-            new Notice('Templater: template rendered successfully');
-          } else if (templaterInstance.api) {
-            console.log('Using Templater API');
-            const api = templaterInstance.api;
-            console.log('API methods:', Object.keys(api));
-            
-            // Try the different API methods with TFile object instead of path
-            if (typeof api.overwrite_file_commands === 'function') {
-              console.log('Calling api.overwrite_file_commands with file');
-              await api.overwrite_file_commands(createdFile);
+          console.debug('Templater instance found, checking for API...');
+          try {
+            const ti = templaterInstance as { templater?: unknown; api?: unknown } & Record<string, unknown>;
+            if (ti.templater && typeof ti.templater === 'object' && (ti.templater as any).overwrite_file_commands) {
+              console.debug('Using templater.overwrite_file_commands');
+              await (ti.templater as any).overwrite_file_commands(createdFile);
               new Notice('Templater: template rendered successfully');
-            } else if (typeof api.render === 'function') {
-              console.log('Calling api.render');
-              await api.render(createdFile);
+            } else if (ti.templater && typeof ti.templater === 'object' && (ti.templater as any).append_template_to_active_file) {
+              console.debug('Using templater.append_template_to_active_file');
+              await (ti.templater as any).overwrite_active_file_commands();
               new Notice('Templater: template rendered successfully');
-            } else if (typeof api.render_file === 'function') {
-              console.log('Calling api.render_file');
-              await api.render_file(createdFile);
-              new Notice('Templater: template rendered successfully');
-            } else if (typeof api.run === 'function') {
-              console.log('Calling api.run');
-              await api.run(createdFile);
-              new Notice('Templater: template rendered successfully');
+            } else if (ti.api && typeof ti.api === 'object') {
+              console.debug('Using Templater API');
+              const api = ti.api as Record<string, unknown> & { [k: string]: unknown };
+              console.debug('API methods:', Object.keys(api));
+
+              if (typeof (api as any).overwrite_file_commands === 'function') {
+                console.debug('Calling api.overwrite_file_commands with file');
+                await (api as any).overwrite_file_commands(createdFile);
+                new Notice('Templater: template rendered successfully');
+              } else if (typeof (api as any).render === 'function') {
+                console.debug('Calling api.render');
+                await (api as any).render(createdFile);
+                new Notice('Templater: template rendered successfully');
+              } else if (typeof (api as any).render_file === 'function') {
+                console.debug('Calling api.render_file');
+                await (api as any).render_file(createdFile);
+                new Notice('Templater: template rendered successfully');
+              } else if (typeof (api as any).run === 'function') {
+                console.debug('Calling api.run');
+                await (api as any).run(createdFile);
+                new Notice('Templater: template rendered successfully');
+              } else {
+                console.warn('No compatible Templater API method found');
+                console.debug('Available methods:', Object.keys(api));
+              }
             } else {
-              console.warn('No compatible Templater API method found');
-              console.log('Available methods:', Object.keys(api));
+              console.warn('No Templater API found on instance');
             }
-          } else {
-            console.warn('No Templater API found on instance');
+          } catch (err) {
+            console.error('Error while invoking templater API', err);
           }
         } else {
-          console.log('No Templater plugin found');
+          console.debug('No Templater plugin found');
         }
       } catch (e) {
         console.error('Templater integration error:', e);
@@ -201,13 +204,13 @@ export class CourseService {
       try {
         const notesOpts = config.NotesSubfolderOptions || {};
         const keys = Object.keys(notesOpts || {});
-        console.log('Notes options keys:', keys);
+  console.debug('Notes options keys:', keys);
         let chosenKey: string | null = null;
         
         // Check if the chosen template has a NotesSubfolderOption configured
         if (chosenTemplateKey && config.Templates?.Course?.[chosenTemplateKey]?.NotesSubfolderOption) {
           chosenKey = config.Templates.Course[chosenTemplateKey].NotesSubfolderOption || null;
-          console.log('Using template\'s NotesSubfolderOption:', chosenKey);
+          console.debug('Using template\'s NotesSubfolderOption:', chosenKey);
         } else if (keys.length > 0) {
           // Otherwise, prompt the user to choose
           const display = keys.map(k => (notesOpts[k] && notesOpts[k].Label) ? notesOpts[k].Label : k);
@@ -218,18 +221,18 @@ export class CourseService {
           if (chosen && chosen !== '(None)') {
             chosenKey = chosen;
           }
-          console.log('Chosen notes layout:', chosenKey);
+          console.debug('Chosen notes layout:', chosenKey);
         }
         
         if (chosenKey && notesOpts[chosenKey] && notesOpts[chosenKey].Folders) {
           const spec = notesOpts[chosenKey].Folders || {};
-          console.log('Creating notes subfolders with spec:', spec);
+          console.debug('Creating notes subfolders with spec:', spec);
           // recursively create folders under courseNotesFolderPath
           const createNested = async (basePath: string, specObj: any) => {
             const created: string[] = [];
             for (const name of Object.keys(specObj)) {
               const p = `${basePath}/${name}`;
-              console.log('Creating notes subfolder:', p);
+              console.debug('Creating notes subfolder:', p);
               if (!this.app.vault.getAbstractFileByPath(p)) {
                 try { await this.app.vault.createFolder(p); created.push(p); } catch (e) { console.error('Failed to create folder:', p, e); }
               }
@@ -240,7 +243,7 @@ export class CourseService {
           };
           await createNested(courseNotesFolderPath, spec);
         } else {
-          console.log('No notes subfolder layout chosen or available');
+          console.debug('No notes subfolder layout chosen or available');
         }
       } catch (e) {
         console.error('Failed to create notes subfolders', e);
@@ -256,25 +259,25 @@ export class CourseService {
    * Delete a course by name or params. If params.courseName is provided we'll resolve file/folders,
    * otherwise prompt the user using PromptModal.
    */
-  async deleteCourse(params?: any): Promise<{ ok: boolean; reason?: string; summary?: Summary; compact?: string }> {
+  async deleteCourse(params?: { courseName?: string }): Promise<{ ok: boolean; reason?: string; summary?: Summary; compact?: string }> {
     try {
-      let courseName = params && params.courseName;
+    let courseName: string | null | undefined = params && params.courseName;
       if (!courseName) {
         const prompt = new PromptModal(this.app, 'Course name to delete');
         courseName = await prompt.openPrompt();
       }
-      if (!courseName) return { ok: false, reason: 'no-course-name' };
+  if (!courseName) return { ok: false, reason: 'no-course-name' };
 
       const config = await this.cfg.readConfig();
       const universityFolderName = (config && config.BaseFolders && config.BaseFolders.University) || '20_University';
 
       const courseFile = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Courses/${courseName}.md`) as TFile | null;
-      const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${courseName}`) as any || null;
-      const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${courseName}`) as any || null;
-      const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${courseName}`) as any || null;
+    const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${courseName}`) as TFolder | null;
+  const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${courseName}`) as TFolder | null;
+  const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${courseName}`) as TFolder | null;
 
       // confirm
-      const yesNo = new (require('../ui/YesNoModal').YesNoModal)(this.app, `Are you sure you want to delete '${courseName}'? This cannot be undone.`);
+  const yesNo = new YesNoModal(this.app, `Are you sure you want to delete '${courseName}'? This cannot be undone.`);
       const confirmed = await yesNo.openPrompt();
       if (!confirmed) return { ok: false, reason: 'cancelled' };
 
@@ -301,9 +304,9 @@ export class CourseService {
   /**
    * Archive a course: move note and folders into Archive/<course>_<timestamp>
    */
-  async archiveCourse(params?: any): Promise<{ ok: boolean; reason?: string; path?: string }> {
+  async archiveCourse(params?: { courseName?: string }): Promise<{ ok: boolean; reason?: string; path?: string }> {
     try {
-      let courseName = params && params.courseName;
+      let courseName: string | null | undefined = params && params.courseName;
       if (!courseName) {
         const prompt = new PromptModal(this.app, 'Course name to archive');
         courseName = await prompt.openPrompt();
@@ -314,18 +317,18 @@ export class CourseService {
       const universityFolderName = (config && config.BaseFolders && config.BaseFolders.University) || '20_University';
 
       const courseFile = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Courses/${courseName}.md`) as TFile | null;
-      const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${courseName}`) as any || null;
-      const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${courseName}`) as any || null;
-      const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${courseName}`) as any || null;
+  const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${courseName}`) as TFolder | null;
+  const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${courseName}`) as TFolder | null;
+  const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${courseName}`) as TFolder | null;
 
-      const yesNo = new (require('../ui/YesNoModal').YesNoModal)(this.app, `Archive '${courseName}'?`);
+  const yesNo = new YesNoModal(this.app, `Archive '${courseName}'?`);
       const confirmed = await yesNo.openPrompt();
       if (!confirmed) return { ok: false, reason: 'cancelled' };
 
-      function isoTimestampForFilename(d = new Date()) {
+      const isoTimestampForFilename = (d = new Date()) => {
         const pad = (n: number) => String(n).padStart(2, '0');
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-      }
+      };
 
       const archiveFolderPath = `${universityFolderName}/Archive/${courseName}_${isoTimestampForFilename()}`;
       await ensureFolder(this.app, archiveFolderPath);
@@ -361,10 +364,10 @@ export class CourseService {
   /**
    * Rename a course from oldName to newName. Handles destination collisions by offering archive or rename existing.
    */
-  async renameCourse(params?: any): Promise<{ ok: boolean; reason?: string; summary?: Summary; compact?: string }> {
+  async renameCourse(params?: { oldName?: string; newName?: string }): Promise<{ ok: boolean; reason?: string; summary?: Summary; compact?: string }> {
     try {
-      let oldName = params && params.oldName;
-      let newName = params && params.newName;
+  let oldName: string | null | undefined = params && params.oldName;
+  let newName: string | null | undefined = params && params.newName;
       if (!oldName) {
         const p = new PromptModal(this.app, 'Current course name');
         oldName = await p.openPrompt();
@@ -382,12 +385,12 @@ export class CourseService {
       // resolve current and dest items
       const courseFile = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Courses/${oldName}.md`) as TFile | null;
       const destCourseFile = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Courses/${newName}.md`) as TFile | null;
-      const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${oldName}`) as any || null;
-      const destAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${newName}`) as any || null;
-      const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${oldName}`) as any || null;
-      const destNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${newName}`) as any || null;
-      const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${oldName}`) as any || null;
-      const destScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${newName}`) as any || null;
+  const courseAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${oldName}`) as TFolder | null;
+  const destAttachmentsFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Attachments/${newName}`) as TFolder | null;
+  const courseNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${oldName}`) as TFolder | null;
+  const destNotesFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Notes/${newName}`) as TFolder | null;
+  const courseScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${oldName}`) as TFolder | null;
+  const destScansFolder = this.app.vault.getAbstractFileByPath(`${universityFolderName}/Scans/${newName}`) as TFolder | null;
 
       const nothingPresent = !courseFile && !courseAttachmentsFolder && !courseNotesFolder && !courseScansFolder;
       if (nothingPresent) return { ok: false, reason: 'no-source' };
@@ -413,7 +416,7 @@ export class CourseService {
             return !!(courseNote || attachments || notes || scans);
           };
           while (!otherNew && attempts < 5) {
-            const p = new PromptModal(this.app, `New name for existing course '${newName}'`);
+            const p: PromptModal = new PromptModal(this.app, `New name for existing course '${newName}'`);
             otherNew = await p.openPrompt();
             if (!otherNew) return { ok: false, reason: 'no-other-name' };
             if (otherNew === oldName || otherNew === newName) { otherNew = null; attempts++; continue; }
@@ -538,12 +541,14 @@ export class CourseService {
       // Recreate empty folders from snapshot
       for (const t of types) {
         const snapFolderPath = `${snapshotRoot}/${t}`;
-        const snapFolder = this.app.vault.getAbstractFileByPath(snapFolderPath) as any;
-        if (snapFolder && Array.isArray(snapFolder.children)) {
-          const walk = async (folder: any, relPrefix: string) => {
-            for (const child of folder.children) {
-              if (child && Array.isArray(child.children)) {
-                const rel = relPrefix ? `${relPrefix}/${child.name}` : child.name;
+        const snapFolder = this.app.vault.getAbstractFileByPath(snapFolderPath) as TFolder | null;
+        if (snapFolder && Array.isArray((snapFolder as unknown as { children?: unknown[] }).children)) {
+          const walk = async (folder: TFolder, relPrefix: string) => {
+            for (const child of (folder as unknown as { children?: any[] }).children || []) {
+              if (child && Array.isArray((child as unknown as { children?: any[] }).children)) {
+                const childName = (child as unknown as { name?: string }).name;
+                if (!childName) continue;
+                const rel = relPrefix ? `${relPrefix}/${childName}` : childName;
                 const relParts = rel.split('/');
                 if (t === 'Courses') {
                   if (relParts[0] === courseName) relParts.shift();
@@ -555,7 +560,7 @@ export class CourseService {
                 if (!this.app.vault.getAbstractFileByPath(destFolderPath)) {
                   try { await this.app.vault.createFolder(destFolderPath); summary.createdFolders!.push(destFolderPath); } catch (err: any) { summary.failed!.push({ path: destFolderPath, error: String(err && err.message ? err.message : err) }); }
                 }
-                await walk(child, rel);
+                await walk(child as unknown as TFolder, rel);
               }
             }
           };
@@ -607,13 +612,13 @@ export class CourseService {
 
       // Remove snapshot
       try {
-        const snapshotFolder = this.app.vault.getAbstractFileByPath(snapshotRoot) as any;
+        const snapshotFolder = this.app.vault.getAbstractFileByPath(snapshotRoot) as TFolder | null;
         if (snapshotFolder) {
-          try { await deleteFolderRecursively(this.app, snapshotFolder, summary); } catch (err: any) { summary.failed!.push({ path: snapshotRoot, error: String(err && err.message ? err.message : err) }); }
+          try { await deleteFolderRecursively(this.app, snapshotFolder, summary); } catch (err: unknown) { summary.failed!.push({ path: snapshotRoot, error: String(err) }); }
         }
       } catch (e: any) { summary.failed!.push({ path: snapshotRoot, error: String(e && e.message ? e.message : e) }); }
 
-      console.log('restoreCourse summary', summary);
+  console.debug('restoreCourse summary', summary);
       return { ok: true, snapshot: chosen };
     } catch (e: any) {
       console.error('restoreCourse failed', e);

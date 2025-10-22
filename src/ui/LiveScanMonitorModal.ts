@@ -9,8 +9,8 @@ export class LiveScanMonitorModal extends Modal {
   private outputMode: 'create' | 'append';
   private outputPath: string;
   private refreshInterval: number | null = null;
-  private isScanning: boolean = false;
-  private pageCount: number = 0;
+  private isScanning = false;
+  private pageCount = 0;
 
   constructor(
     app: App,
@@ -139,7 +139,7 @@ export class LiveScanMonitorModal extends Modal {
     if (!session) return;
 
     try {
-      const currentSnapshot = await (this.scanService as any).takeSnapshot(session.dayFolder);
+  const currentSnapshot = await this.scanService.takeSnapshot(session.dayFolder);
       const before = session.snapshotBefore;
       let newCount = 0;
 

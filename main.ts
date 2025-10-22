@@ -269,7 +269,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			try {
 				await this.app.vault.createFolder(courseScansFolder);
 			} catch (e) {
-				new Notice(`Failed to create scans folder: ${(e as any).message}`);
+				new Notice(`Failed to create scans folder: ${String(e)}`);
 				return;
 			}
 		}
@@ -294,13 +294,81 @@ export default class JinxxToolsPlugin extends Plugin {
 		let outputPath: string;
 
 		if (String(modeChoice) === '📄 Create New Scan') {
+			// Get existing subfolders in the course scans folder
+			const existingSubfolders: string[] = [];
+			const scansFolderNode = this.app.vault.getAbstractFileByPath(courseScansFolder);
+			if (scansFolderNode && 'children' in scansFolderNode) {
+				const children = (scansFolderNode as unknown as { children?: unknown[] }).children || [];
+				for (const child of children) {
+					const childNode = child as { path?: string; children?: unknown[] };
+					if (Array.isArray(childNode.children)) {
+						// It's a folder
+						const relativePath = childNode.path?.substring(courseScansFolder.length + 1);
+						if (relativePath) {
+							existingSubfolders.push(relativePath);
+						}
+					}
+				}
+			}
+			
+			// Build subfolder options: root, existing folders, and "Create New"
+			const subfolderOptions = [
+				'(Root - No Subfolder)',
+				...existingSubfolders.sort(),
+				'📁 Create New Subfolder...'
+			];
+			
+			const subfolderSugg = new SimpleSuggester(
+				this.app,
+				subfolderOptions,
+				(opt: string) => opt,
+				'Select subfolder for the scan'
+			);
+			
+			const subfolderChoice = await subfolderSugg.openAndChoose();
+			if (!subfolderChoice) return;
+			
+			let subfolder = '';
+			if (String(subfolderChoice) === '📁 Create New Subfolder...') {
+				const subfolderPrompt = new PromptModal(
+					this.app,
+					'Enter new subfolder path (e.g., "Week1" or "Lectures/Week1")'
+				);
+				const newSubfolder = await subfolderPrompt.openPrompt();
+				if (!newSubfolder || !newSubfolder.trim()) return;
+				subfolder = newSubfolder.trim();
+			} else if (String(subfolderChoice) !== '(Root - No Subfolder)') {
+				subfolder = String(subfolderChoice);
+			}
+			
 			// Prompt for filename
-			const prompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
-			const filename = await prompt.openPrompt();
+			const filenamePrompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
+			const filename = await filenamePrompt.openPrompt();
 			if (!filename) return;
 
 			const sanitizedFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
-			const outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+			
+			// Build path with optional subfolder
+			let outputVaultPath: string;
+			if (subfolder) {
+				// Remove leading/trailing slashes and normalize
+				const cleanSubfolder = subfolder.replace(/^\/+|\/+$/g, '');
+				outputVaultPath = `${courseScansFolder}/${cleanSubfolder}/${sanitizedFilename}`;
+				
+				// Ensure subfolder exists
+				const subfolderPath = `${courseScansFolder}/${cleanSubfolder}`;
+				const subfolderNode = this.app.vault.getAbstractFileByPath(subfolderPath);
+				if (!subfolderNode) {
+					try {
+						await this.app.vault.createFolder(subfolderPath);
+					} catch (e) {
+						new Notice(`Failed to create subfolder: ${String(e)}`);
+						return;
+					}
+				}
+			} else {
+				outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+			}
 
 			// Check if already exists
 			if (this.app.vault.getAbstractFileByPath(outputVaultPath)) {
@@ -309,7 +377,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			}
 
 			outputMode = 'create';
-			const adapter = this.app.vault.adapter as any;
+			const adapter = this.app.vault.adapter as unknown as { basePath?: string };
 			const vaultPath = adapter.basePath || '';
 			outputPath = path.join(vaultPath, outputVaultPath);
 		} else {
@@ -322,7 +390,11 @@ export default class JinxxToolsPlugin extends Plugin {
 			const pdfSugg = new SimpleSuggester(
 				this.app,
 				pdfFiles.map(f => f.path),
-				(p: string) => path.basename(p),
+				(p: string) => {
+					// Show relative path from scans folder to help identify subfolder PDFs
+					const relativePath = p.substring(courseScansFolder.length + 1);
+					return relativePath;
+				},
 				'Select scan to append to'
 			);
 
@@ -330,7 +402,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			if (!selectedPdf) return;
 
 			outputMode = 'append';
-			const adapter = this.app.vault.adapter as any;
+			const adapter = this.app.vault.adapter as unknown as { basePath?: string };
 			const vaultPath = adapter.basePath || '';
 			outputPath = path.join(vaultPath, String(selectedPdf));
 		}
@@ -364,7 +436,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			try {
 				await this.app.vault.createFolder(courseScansFolder);
 			} catch (e) {
-				new Notice(`Failed to create scans folder: ${(e as any).message}`);
+				new Notice(`Failed to create scans folder: ${String(e)}`);
 				return;
 			}
 		}
@@ -389,13 +461,81 @@ export default class JinxxToolsPlugin extends Plugin {
 		let outputPath: string;
 
 		if (String(modeChoice) === '📄 Create New Scan') {
+			// Get existing subfolders in the course scans folder
+			const existingSubfolders: string[] = [];
+			const scansFolderNode = this.app.vault.getAbstractFileByPath(courseScansFolder);
+			if (scansFolderNode && 'children' in scansFolderNode) {
+				const children = (scansFolderNode as unknown as { children?: unknown[] }).children || [];
+				for (const child of children) {
+					const childNode = child as { path?: string; children?: unknown[] };
+					if (Array.isArray(childNode.children)) {
+						// It's a folder
+						const relativePath = childNode.path?.substring(courseScansFolder.length + 1);
+						if (relativePath) {
+							existingSubfolders.push(relativePath);
+						}
+					}
+				}
+			}
+			
+			// Build subfolder options: root, existing folders, and "Create New"
+			const subfolderOptions = [
+				'(Root - No Subfolder)',
+				...existingSubfolders.sort(),
+				'📁 Create New Subfolder...'
+			];
+			
+			const subfolderSugg = new SimpleSuggester(
+				this.app,
+				subfolderOptions,
+				(opt: string) => opt,
+				'Select subfolder for the scan'
+			);
+			
+			const subfolderChoice = await subfolderSugg.openAndChoose();
+			if (!subfolderChoice) return;
+			
+			let subfolder = '';
+			if (String(subfolderChoice) === '📁 Create New Subfolder...') {
+				const subfolderPrompt = new PromptModal(
+					this.app,
+					'Enter new subfolder path (e.g., "Week1" or "Lectures/Week1")'
+				);
+				const newSubfolder = await subfolderPrompt.openPrompt();
+				if (!newSubfolder || !newSubfolder.trim()) return;
+				subfolder = newSubfolder.trim();
+			} else if (String(subfolderChoice) !== '(Root - No Subfolder)') {
+				subfolder = String(subfolderChoice);
+			}
+			
 			// Prompt for filename
-			const prompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
-			const filename = await prompt.openPrompt();
+			const filenamePrompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
+			const filename = await filenamePrompt.openPrompt();
 			if (!filename) return;
 
 			const sanitizedFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
-			const outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+			
+			// Build path with optional subfolder
+			let outputVaultPath: string;
+			if (subfolder) {
+				// Remove leading/trailing slashes and normalize
+				const cleanSubfolder = subfolder.replace(/^\/+|\/+$/g, '');
+				outputVaultPath = `${courseScansFolder}/${cleanSubfolder}/${sanitizedFilename}`;
+				
+				// Ensure subfolder exists
+				const subfolderPath = `${courseScansFolder}/${cleanSubfolder}`;
+				const subfolderNode = this.app.vault.getAbstractFileByPath(subfolderPath);
+				if (!subfolderNode) {
+					try {
+						await this.app.vault.createFolder(subfolderPath);
+					} catch (e) {
+						new Notice(`Failed to create subfolder: ${String(e)}`);
+						return;
+					}
+				}
+			} else {
+				outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+			}
 
 			// Check if already exists
 			if (this.app.vault.getAbstractFileByPath(outputVaultPath)) {
@@ -404,7 +544,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			}
 
 			outputMode = 'create';
-			const adapter = this.app.vault.adapter as any;
+			const adapter = this.app.vault.adapter as unknown as { basePath?: string };
 			const vaultPath = adapter.basePath || '';
 			outputPath = path.join(vaultPath, outputVaultPath);
 		} else {
@@ -417,7 +557,11 @@ export default class JinxxToolsPlugin extends Plugin {
 			const pdfSugg = new SimpleSuggester(
 				this.app,
 				pdfFiles.map(f => f.path),
-				(p: string) => path.basename(p),
+				(p: string) => {
+					// Show relative path from scans folder to help identify subfolder PDFs
+					const relativePath = p.substring(courseScansFolder.length + 1);
+					return relativePath;
+				},
 				'Select scan to append to'
 			);
 
@@ -425,7 +569,7 @@ export default class JinxxToolsPlugin extends Plugin {
 			if (!selectedPdf) return;
 
 			outputMode = 'append';
-			const adapter = this.app.vault.adapter as any;
+			const adapter = this.app.vault.adapter as unknown as { basePath?: string };
 			const vaultPath = adapter.basePath || '';
 			outputPath = path.join(vaultPath, String(selectedPdf));
 		}

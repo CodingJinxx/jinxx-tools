@@ -4,28 +4,28 @@ import { SimpleSuggester } from '../ui/SimpleSuggester';
 import { PromptModal } from '../ui/PromptModal';
 import { YesNoModal } from '../ui/YesNoModal';
 
-function isObjectOrArray(v: any) { return v && typeof v === 'object'; }
+function isObjectOrArray(v: unknown): v is Record<string, unknown> | unknown[] { return !!v && typeof v === 'object'; }
 
-function getTypeIcon(v: any) {
+function getTypeIcon(v: unknown) {
   if (Array.isArray(v)) return '📚';
   if (isObjectOrArray(v)) return '🗂️';
   return '🔤';
 }
 
-function parseSimpleValue(s: string): any {
+function parseSimpleValue(s: string): string | number | boolean {
   if (s === 'true') return true;
   if (s === 'false') return false;
   if (!isNaN(Number(s)) && s.trim() !== '') return (s.indexOf('.') !== -1) ? parseFloat(s) : parseInt(s, 10);
   return s;
 }
 
-function parseValueFromInput(s: string) {
+function parseValueFromInput(s: string): unknown {
   if (s === '') return '';
   try { return JSON.parse(s); } catch (_) { return parseSimpleValue(s); }
 }
 
 export async function runEditConfig(plugin: Plugin): Promise<void> {
-  const app = (plugin as any).app as App;
+  const app = (plugin as unknown as { app: App }).app;
   const cfgSvc = new ConfigService(plugin);
 
   // If plugin-based settings are in use, read via cfgSvc.readConfig()
@@ -38,7 +38,7 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
 
   function getAtPath(obj: any, pathArr: Array<string | number>) {
     let cur = obj;
-    for (const p of pathArr) { if (cur == null) return undefined; cur = cur[p as any]; }
+    for (const p of pathArr) { if (cur == null) return undefined; cur = cur[p]; }
     return cur;
   }
 
@@ -46,11 +46,11 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
     if (pathArr.length === 0) return value;
     let cur = obj;
     for (let i = 0; i < pathArr.length - 1; i++) {
-      const p = pathArr[i] as any;
+      const p = pathArr[i];
       if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = {};
       cur = cur[p];
     }
-    cur[pathArr[pathArr.length - 1] as any] = value;
+    cur[pathArr[pathArr.length - 1]] = value;
     return obj;
   }
 
@@ -58,14 +58,14 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
     if (pathArr.length === 0) return;
     let cur = obj;
     for (let i = 0; i < pathArr.length - 1; i++) {
-      const p = pathArr[i] as any;
+      const p = pathArr[i];
       if (cur[p] == null) return;
       cur = cur[p];
     }
-    delete cur[pathArr[pathArr.length - 1] as any];
+    delete cur[pathArr[pathArr.length - 1]];
   }
 
-  while (true) {
+  for (;;) {
     const cur = getAtPath(data, path) || {};
     const entries: Array<{ id: string; label: string }> = [];
     if (Array.isArray(cur)) {
@@ -91,14 +91,14 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
     choices.push({ id: 'save', label: '💾 Save and exit' });
     choices.push({ id: 'cancel', label: '✖️ Cancel' });
 
-    const sugg = new SimpleSuggester(app, choices, (c: any) => c.label, `Edit config — ${path.length ? path.join('/') : '<root>'}`);
+  const sugg = new SimpleSuggester<{ id: string; label: string }>(app, choices, (c) => c.label, `Edit config — ${path.length ? path.join('/') : '<root>'}`);
     const picked = await sugg.openAndChoose();
     if (!picked || picked.id === 'cancel') { new Notice('Cancelled'); return; }
 
     if (picked.id === 'add') {
       if (Array.isArray(cur)) {
         const addChoices = [ { id: 'primitive', label: '🔤 Primitive value' }, { id: 'object', label: '🗂️ Object' }, { id: 'array', label: '📚 Array' } ];
-        const pick = await new SimpleSuggester(app, addChoices, (c: any) => c.label, 'Append to array — choose type').openAndChoose();
+  const pick = await new SimpleSuggester<{ id: string; label: string }>(app, addChoices, (c) => c.label, 'Append to array — choose type').openAndChoose();
         if (!pick) continue;
         if (pick.id === 'primitive') {
           const val = await new PromptModal(app, 'Value for new array item (JSON allowed)').openPrompt();
@@ -107,7 +107,7 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
         else if (pick.id === 'array') { cur.push([]); setAtPath(data, path, cur); }
       } else {
         const addChoices = [ { id: 'kv', label: '🔤 Key → Value' }, { id: 'object', label: '🗂️ Object' }, { id: 'array', label: '📚 Array' } ];
-        const pick = await new SimpleSuggester(app, addChoices, (c: any) => c.label, 'Add to object — choose type').openAndChoose();
+  const pick = await new SimpleSuggester<{ id: string; label: string }>(app, addChoices, (c) => c.label, 'Add to object — choose type').openAndChoose();
         if (!pick) continue;
         const key = await new PromptModal(app, 'Key name').openPrompt();
         if (!key) continue;
@@ -121,7 +121,7 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
 
     if (picked.id === 'del') {
       if (entries.length === 0) continue;
-      const choice = await new SimpleSuggester(app, entries, (e: any) => e.label, 'Select entry to delete').openAndChoose();
+  const choice = await new SimpleSuggester<{ id: string; label: string }>(app, entries, (e) => e.label, 'Select entry to delete').openAndChoose();
       if (!choice) continue;
       const id = choice.id;
       if (id.startsWith('key:')) {
@@ -149,12 +149,12 @@ export async function runEditConfig(plugin: Plugin): Promise<void> {
     if (picked.id.startsWith('key:') || picked.id.startsWith('idx:')) {
       const keyOrIdx = picked.id.startsWith('key:') ? picked.id.slice(4) : parseInt(picked.id.slice(4), 10);
       const curVal = getAtPath(data, path.concat([keyOrIdx]));
-      if (isObjectOrArray(curVal)) { path.push(keyOrIdx as any); continue; }
+      if (isObjectOrArray(curVal)) { path.push(keyOrIdx); continue; }
       const prefill = String(curVal ?? '');
       const edited = await new PromptModal(app, 'Edit value', prefill).openPrompt();
       if (edited == null) continue;
       const parsed = parseValueFromInput(edited);
-      setAtPath(data, path.concat([keyOrIdx as any]), parsed);
+      setAtPath(data, path.concat([keyOrIdx]), parsed);
       continue;
     }
   }

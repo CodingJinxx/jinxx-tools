@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from 'obsidian';
+import { App } from 'obsidian';
 import type JinxxToolsPlugin from '../../main';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -49,6 +49,7 @@ export class ScanService {
 
   /**
    * Get the current or most recent day folder in the scanner root
+   * If no day folder exists, create one with today's date
    */
   private async getDayFolder(scanRoot: string): Promise<string | null> {
     try {
@@ -60,7 +61,22 @@ export class ScanService {
         .reverse();
       
       if (dayFolders.length === 0) {
-        return null;
+        // No day folder exists, create one with today's date
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayFolderName = `${year}_${month}_${day}`;
+        const todayFolderPath = path.join(scanRoot, todayFolderName);
+        
+        try {
+          await mkdir(todayFolderPath, { recursive: true });
+          console.debug(`Created day folder: ${todayFolderPath}`);
+          return todayFolderPath;
+        } catch (mkdirErr) {
+          console.error('Failed to create day folder:', mkdirErr);
+          return null;
+        }
       }
       
       return path.join(scanRoot, dayFolders[0]);
@@ -71,29 +87,38 @@ export class ScanService {
   }
 
   /**
-   * Take a snapshot of all PDF files in a directory
+   * Take a snapshot of all PDF files in a directory (recursively scans subfolders)
    */
   async takeSnapshot(folderPath: string): Promise<FileSnapshot> {
     const snapshot: FileSnapshot = {};
-    try {
-      const entries = await readdir(folderPath);
-      for (const entry of entries) {
-        if (entry.toLowerCase().endsWith('.pdf')) {
-          const fullPath = path.join(folderPath, entry);
-          try {
-            const stats = await stat(fullPath);
-            snapshot[fullPath] = {
-              size: stats.size,
-              mtime: stats.mtimeMs,
-            };
-          } catch (e) {
-            console.warn(`Failed to stat file ${fullPath}:`, e);
+    
+    const scanRecursive = async (currentPath: string): Promise<void> => {
+      try {
+        const entries = await readdir(currentPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(currentPath, entry.name);
+          
+          if (entry.isDirectory()) {
+            // Recursively scan subfolders
+            await scanRecursive(fullPath);
+          } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+            try {
+              const stats = await stat(fullPath);
+              snapshot[fullPath] = {
+                size: stats.size,
+                mtime: stats.mtimeMs,
+              };
+            } catch (e) {
+              console.warn(`Failed to stat file ${fullPath}:`, e);
+            }
           }
         }
+      } catch (e) {
+        console.warn(`Failed to scan directory ${currentPath}:`, e);
       }
-    } catch (e) {
-      console.error('Failed to take snapshot:', e);
-    }
+    };
+    
+    await scanRecursive(folderPath);
     return snapshot;
   }
 
@@ -125,7 +150,7 @@ export class ScanService {
     if (candidates.length === 0) {
       return { 
         ok: false, 
-        reason: 'No day folders found in any scanner watch folder. Ensure scanner creates folders like YYYY_MM_DD.' 
+        reason: 'No scanner watch folders are accessible. Please check Settings.' 
       };
     }
 
@@ -143,7 +168,7 @@ export class ScanService {
       snapshotBefore,
     };
 
-    console.log('Scan session started:', this.currentSession);
+  console.debug('Scan session started:', this.currentSession);
     return { ok: true, session: this.currentSession };
   }
 
@@ -162,7 +187,7 @@ export class ScanService {
     const newFiles = await this.detectNewFiles(this.currentSession);
     this.currentSession.newFiles = newFiles;
 
-    console.log('Scan session ended. New files detected:', newFiles.length);
+  console.debug('Scan session ended. New files detected:', newFiles.length);
     return { ok: true, newFiles };
   }
 
@@ -268,10 +293,10 @@ export class ScanService {
           const pdfBytes = await readFile(inputPath);
           const pdf = await PDFDocument.load(pdfBytes);
           const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-          copiedPages.forEach((page: any) => mergedPdf.addPage(page));
+          copiedPages.forEach((page: unknown) => mergedPdf.addPage(page as any));
         } catch (e) {
           console.error(`Failed to merge file ${inputPath}:`, e);
-          return { ok: false, reason: `Failed to merge ${path.basename(inputPath)}: ${e.message}` };
+          return { ok: false, reason: `Failed to merge ${path.basename(inputPath)}: ${String(e)}` };
         }
       }
 
@@ -282,11 +307,11 @@ export class ScanService {
       await writeFile(tempPath, mergedBytes);
       await rename(tempPath, outputPath);
 
-      console.log(`Successfully merged ${inputFiles.length} files to ${outputPath}`);
+  console.debug(`Successfully merged ${inputFiles.length} files to ${outputPath}`);
       return { ok: true };
     } catch (e) {
-      console.error('PDF merge failed:', e);
-      return { ok: false, reason: `Merge failed: ${e.message}` };
+  console.error('PDF merge failed:', e);
+  return { ok: false, reason: `Merge failed: ${String(e)}` };
     }
   }
 
@@ -303,7 +328,7 @@ export class ScanService {
         try {
           const originalBytes = await readFile(targetPath);
           await writeFile(backupPath, originalBytes);
-          console.log(`Created backup: ${backupPath}`);
+          console.debug(`Created backup: ${backupPath}`);
         } catch (e) {
           console.warn('Failed to create backup:', e);
         }
@@ -319,10 +344,10 @@ export class ScanService {
           const pdfBytes = await readFile(inputPath);
           const pdf = await PDFDocument.load(pdfBytes);
           const copiedPages = await targetPdf.copyPages(pdf, pdf.getPageIndices());
-          copiedPages.forEach((page: any) => targetPdf.addPage(page));
+          copiedPages.forEach((page: unknown) => targetPdf.addPage(page as any));
         } catch (e) {
           console.error(`Failed to append file ${inputPath}:`, e);
-          return { ok: false, reason: `Failed to append ${path.basename(inputPath)}: ${e.message}` };
+          return { ok: false, reason: `Failed to append ${path.basename(inputPath)}: ${String(e)}` };
         }
       }
 
@@ -333,11 +358,11 @@ export class ScanService {
       await writeFile(tempPath, mergedBytes);
       await rename(tempPath, targetPath);
 
-      console.log(`Successfully appended ${inputFiles.length} files to ${targetPath}`);
+  console.debug(`Successfully appended ${inputFiles.length} files to ${targetPath}`);
       return { ok: true };
     } catch (e) {
-      console.error('PDF append failed:', e);
-      return { ok: false, reason: `Append failed: ${e.message}` };
+  console.error('PDF append failed:', e);
+  return { ok: false, reason: `Append failed: ${String(e)}` };
     }
   }
 
@@ -360,7 +385,7 @@ export class ScanService {
         const archivePath = path.join(archiveFolder, basename);
         try {
           await rename(file, archivePath);
-          console.log(`Archived: ${basename}`);
+          console.debug(`Archived: ${basename}`);
         } catch (e) {
           console.error(`Failed to archive ${basename}:`, e);
         }

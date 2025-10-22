@@ -4,7 +4,6 @@ import { ScanFile } from '../services/ScanService';
 import { SimpleSuggester } from './SimpleSuggester';
 import { PromptModal } from './PromptModal';
 import { CourseService } from '../services/CourseService';
-import * as path from 'path';
 
 export class ScanSessionModal extends Modal {
   private plugin: JinxxToolsPlugin;
@@ -97,11 +96,11 @@ export class ScanSessionModal extends Modal {
 
       // File info
       const fileInfo = fileRow.createDiv({ cls: 'jinxx-file-info' });
-      const fileName = fileInfo.createEl('span', {
+      fileInfo.createEl('span', {
         text: file.name,
         cls: file.stable ? '' : 'mod-warning',
       });
-      const fileSize = fileInfo.createEl('span', {
+      fileInfo.createEl('span', {
         text: ` (${(file.size / 1024).toFixed(1)} KB)`,
         cls: 'jinxx-file-size',
       });
@@ -211,7 +210,14 @@ export class ScanSessionModal extends Modal {
       }
 
       const options = ['(Create New)', ...pdfFiles.map(f => f.path)];
-      const labels = ['Create new scan PDF', ...pdfFiles.map(f => f.basename)];
+      // Show relative path from scans folder to help identify subfolder PDFs
+      const labels = [
+        'Create new scan PDF', 
+        ...pdfFiles.map(f => {
+          const relativePath = f.path.substring(scansFolderPath.length + 1);
+          return relativePath;
+        })
+      ];
 
       const sugg = new SimpleSuggester(
         this.app,

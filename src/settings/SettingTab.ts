@@ -7,7 +7,7 @@ import { PromptModal } from '../ui/PromptModal';
 
 export interface LectureSubfolderOption {
   Label: string;
-  Folders: Record<string, any>;
+  Folders: Record<string, unknown>;
 }
 
 export interface CourseTemplate {
@@ -97,7 +97,7 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  private debounce(key: string, callback: () => void, delay: number = 500) {
+  private debounce(key: string, callback: () => void, delay = 500) {
     const existing = this.debounceTimers.get(key);
     if (existing) {
       clearTimeout(existing);
@@ -106,13 +106,14 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
     this.debounceTimers.set(key, timer);
   }
 
-  private countFolders(folders: Record<string, any>): number {
+  private countFolders(folders: Record<string, unknown>): number {
     let count = 0;
-    const countRecursive = (obj: Record<string, any>) => {
+    const countRecursive = (obj: Record<string, unknown>) => {
       for (const key of Object.keys(obj)) {
         count++;
-        if (obj[key] && typeof obj[key] === 'object') {
-          countRecursive(obj[key]);
+        const v = obj[key];
+        if (v && typeof v === 'object') {
+          countRecursive(v as Record<string, unknown>);
         }
       }
     };
@@ -341,19 +342,9 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
 
     // Scans
     containerEl.createEl('h3', { text: 'Scans' });
-    containerEl.createEl('p', {
-      text: 'Configure scan session settings and watch folders.',
-      cls: 'setting-item-description',
-    });
 
     const scansDiv = containerEl.createDiv({ cls: 'jinxx-scans' });
 
-    // Watch Folders (scanner paths)
-    containerEl.createEl('h4', { text: 'Scanner Watch Folders' });
-    containerEl.createEl('p', {
-      text: 'Add folders where your scanner saves PDFs (supports multiple scanners)',
-      cls: 'setting-item-description',
-    });
 
     const scannerFolders = this.plugin.settings.Scans.WatchFolders;
     
@@ -396,7 +387,6 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
         })
       );
 
-    containerEl.createEl('h4', { text: 'Scan Processing Settings' });
 
     // Stability delay
     new Setting(scansDiv)

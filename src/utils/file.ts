@@ -1,4 +1,4 @@
-import { App, TFile, TFolder } from 'obsidian';
+import { App, TFolder } from 'obsidian';
 
 export interface Summary {
   createdFolders?: string[];
@@ -15,10 +15,10 @@ export async function ensureFolder(app: App, p: string, summary?: Summary): Prom
       await app.vault.createFolder(p);
       f = app.vault.getAbstractFileByPath(p) as TFolder | null;
       if (summary && Array.isArray(summary.createdFolders)) summary.createdFolders.push(p);
-    } catch (err: any) {
-      if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: p, error: String(err && err.message ? err.message : err) });
-      return null;
-    }
+    } catch (err: unknown) {
+        if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: p, error: String(err) });
+        return null;
+      }
   }
   return f;
 }
@@ -27,57 +27,62 @@ export async function ensureFolder(app: App, p: string, summary?: Summary): Prom
 export async function deleteFolderRecursively(app: App, folder: TFolder | null, summary?: Summary): Promise<void> {
   if (!folder) return;
   try {
+    // Recursive helper to collect all descendant folders
+    const collectFolders = (f: TFolder): TFolder[] => {
+      const result: TFolder[] = [];
+      const children = (f as unknown as { children?: unknown[] }).children;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          const childNode = child as { children?: unknown[] };
+          if (Array.isArray(childNode.children)) {
+            // It's a folder
+            const childFolder = child as unknown as TFolder;
+            result.push(...collectFolders(childFolder));
+            result.push(childFolder);
+          }
+        }
+      }
+      return result;
+    };
+
+    // Delete all files in this folder and subfolders
     const folderPath = folder.path;
-    // delete all files under this folder
     const filesUnder = app.vault.getFiles().filter(f => f.path.startsWith(folderPath + '/'));
     for (const f of filesUnder) {
       try {
         await app.vault.delete(f);
         if (summary && Array.isArray(summary.deletedFiles)) summary.deletedFiles.push(f.path);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Failed to delete file during recursive delete', f.path, err);
-        if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: f.path, error: String(err && err.message ? err.message : err) });
+        if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: f.path, error: String(err) });
       }
     }
 
-    // collect subfolders and delete deepest-first
-    const folders: string[] = [];
-    const collect = (node: any, rel: string) => {
-      if (!node || !Array.isArray(node.children)) return;
-      for (const child of node.children) {
-        if (child && Array.isArray(child.children)) {
-          const childRel = rel ? `${rel}/${child.name}` : child.name;
-          folders.push(`${folderPath}/${childRel}`);
-          collect(child, childRel);
-        }
-      }
-    };
-    collect(folder as any, '');
-    folders.sort((a, b) => b.split('/').length - a.split('/').length);
-    for (const fp of folders) {
-      const node = app.vault.getAbstractFileByPath(fp);
-      if (node) {
-        try {
-          await app.vault.delete(node);
-          if (summary && Array.isArray(summary.deletedFolders)) summary.deletedFolders.push(fp);
-        } catch (err: any) {
-          console.error('Failed to delete subfolder during recursive delete', fp, err);
-          if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: fp, error: String(err && err.message ? err.message : err) });
-        }
+    // Collect all subfolders (deepest first already from collectFolders)
+    const subfolders = collectFolders(folder);
+    
+    // Delete all subfolders
+    for (const subfolder of subfolders) {
+      try {
+        await app.vault.delete(subfolder);
+        if (summary && Array.isArray(summary.deletedFolders)) summary.deletedFolders.push(subfolder.path);
+      } catch (err: unknown) {
+        console.error('Failed to delete subfolder during recursive delete', subfolder.path, err);
+        if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: subfolder.path, error: String(err) });
       }
     }
 
-    // finally delete the folder itself
+    // Finally delete the folder itself
     try {
       await app.vault.delete(folder);
       if (summary && Array.isArray(summary.deletedFolders)) summary.deletedFolders.push(folder.path);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to delete folder itself', folder.path, err);
-      if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: folder.path, error: String(err && err.message ? err.message : err) });
+      if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: folder.path, error: String(err) });
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('deleteFolderRecursively failed for', folder && folder.path, err);
-    if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: folder && folder.path, error: String(err && err.message ? err.message : err) });
+    if (summary && Array.isArray(summary.failed)) summary.failed.push({ path: folder && folder.path, error: String(err) });
   }
 }
 

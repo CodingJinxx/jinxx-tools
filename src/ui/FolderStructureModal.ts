@@ -4,12 +4,12 @@ import { SimpleSuggester } from './SimpleSuggester';
 import { YesNoModal } from './YesNoModal';
 
 export class FolderStructureModal extends Modal {
-  private folders: Record<string, any>;
-  private onSave: (folders: Record<string, any>) => void;
+  private folders: Record<string, unknown>;
+  private onSave: (folders: Record<string, unknown>) => void;
   private optionLabel: string;
   private currentPath: string[] = [];
 
-  constructor(app: App, optionLabel: string, folders: Record<string, any>, onSave: (folders: Record<string, any>) => void) {
+  constructor(app: App, optionLabel: string, folders: Record<string, unknown>, onSave: (folders: Record<string, unknown>) => void) {
     super(app);
     this.optionLabel = optionLabel;
     this.folders = JSON.parse(JSON.stringify(folders)); // Deep clone
@@ -20,10 +20,17 @@ export class FolderStructureModal extends Modal {
     await this.showFolderMenu();
   }
 
-  private getCurrentFolder(): Record<string, any> {
-    let current = this.folders;
+  private getCurrentFolder(): Record<string, unknown> {
+    let current: Record<string, unknown> = this.folders as Record<string, unknown>;
     for (const part of this.currentPath) {
-      current = current[part];
+      const child = current[part];
+      if (child && typeof child === 'object') {
+        current = child as Record<string, unknown>;
+      } else {
+        // Missing path -> create empty
+        current[part] = {};
+        current = current[part] as Record<string, unknown>;
+      }
     }
     return current;
   }
@@ -65,7 +72,10 @@ export class FolderStructureModal extends Modal {
 
     // Subfolders
     for (const name of subfolderNames) {
-      const childCount = Object.keys(currentFolder[name] || {}).length;
+      const rawChild = currentFolder[name];
+      let childObj: Record<string, unknown> | null = null;
+      if (rawChild && typeof rawChild === 'object') childObj = rawChild as Record<string, unknown>;
+      const childCount = childObj ? Object.keys(childObj).length : 0;
       const desc = childCount > 0 ? `${childCount} subfolder${childCount === 1 ? '' : 's'}` : 'Empty folder';
       choices.push({ id: name, label: `📁 ${name}`, description: desc });
     }
@@ -151,10 +161,11 @@ export class FolderStructureModal extends Modal {
         current[part] = {};
       } else {
         // Intermediate part - create if doesn't exist
-        if (!current[part]) {
+        const next = current[part];
+        if (!next || typeof next !== 'object') {
           current[part] = {};
         }
-        current = current[part];
+        current = current[part] as Record<string, unknown>;
       }
     }
 
@@ -179,9 +190,11 @@ export class FolderStructureModal extends Modal {
 
     // Get parent folder
     const parentPath = this.currentPath.slice(0, -1);
-    let parent = this.folders;
+    let parent: Record<string, unknown> = this.folders as Record<string, unknown>;
     for (const part of parentPath) {
-      parent = parent[part];
+      const child = parent[part];
+      if (child && typeof child === 'object') parent = child as Record<string, unknown>;
+      else parent[part] = {};
     }
 
     // Check if new name exists
@@ -219,9 +232,11 @@ export class FolderStructureModal extends Modal {
 
     // Get parent folder
     const parentPath = this.currentPath.slice(0, -1);
-    let parent = this.folders;
+    let parent: Record<string, unknown> = this.folders as Record<string, unknown>;
     for (const part of parentPath) {
-      parent = parent[part];
+      const child = parent[part];
+      if (child && typeof child === 'object') parent = child as Record<string, unknown>;
+      else parent[part] = {};
     }
 
     // Delete

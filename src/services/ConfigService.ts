@@ -1,4 +1,4 @@
-import { App, Notice, Plugin } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import type { JinxxToolsSettings } from '../settings/SettingTab';
 
 export class ConfigService {
@@ -7,7 +7,7 @@ export class ConfigService {
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
-    this.app = (this.plugin as any).app as App;
+    this.app = (this.plugin as unknown as { app: App }).app;
   }
 
   async readConfig(): Promise<JinxxToolsSettings> {

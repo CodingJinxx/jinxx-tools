@@ -31,7 +31,6 @@ export interface JinxxToolsSettings {
   };
   Scans: {
     WatchFolders: string[];
-    scanFolderPath: string;
     stabilityDelayMs: number;
     stabilityRetries: number;
     keepOriginals: boolean;
@@ -39,7 +38,6 @@ export interface JinxxToolsSettings {
     archiveFolderPath: string;
     mergeLibrary: 'pdf-lib' | 'ghostscript';
     makeBackupBeforeAppend: boolean;
-    namingPattern: string;
   };
 }
 
@@ -79,16 +77,14 @@ export const DEFAULT_SETTINGS: JinxxToolsSettings = {
     },
   },
   Scans: {
-    WatchFolders: [],
-    scanFolderPath: '',
-    stabilityDelayMs: 2000,
-    stabilityRetries: 4,
-    keepOriginals: true,
-    archiveAfterMerge: false,
+    WatchFolders: ['C:\\Dev\\Scans'],
+    stabilityDelayMs: 1000,
+    stabilityRetries: 3,
+    keepOriginals: false,
+    archiveAfterMerge: true,
     archiveFolderPath: '',
     mergeLibrary: 'pdf-lib',
     makeBackupBeforeAppend: true,
-    namingPattern: '{course}_{YYYY-MM-DD}_{counter}.pdf',
   },
 };
 
@@ -352,19 +348,55 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
 
     const scansDiv = containerEl.createDiv({ cls: 'jinxx-scans' });
 
-    // Scanner folder path
+    // Watch Folders (scanner paths)
+    containerEl.createEl('h4', { text: 'Scanner Watch Folders' });
+    containerEl.createEl('p', {
+      text: 'Add folders where your scanner saves PDFs (supports multiple scanners)',
+      cls: 'setting-item-description',
+    });
+
+    const scannerFolders = this.plugin.settings.Scans.WatchFolders;
+    
+    if (scannerFolders.length === 0) {
+      new Setting(scansDiv)
+        .setName('No scanner folders configured')
+        .setDesc('Add folders to watch for scans');
+    } else {
+      for (let i = 0; i < scannerFolders.length; i++) {
+        const folder = scannerFolders[i];
+        const setting = new Setting(scansDiv)
+          .setName(folder)
+          .setDesc(`Scanner folder ${i + 1}`);
+
+        setting.addButton((btn) =>
+          btn
+            .setButtonText('Remove')
+            .setWarning()
+            .onClick(async () => {
+              this.plugin.settings.Scans.WatchFolders.splice(i, 1);
+              await this.plugin.saveSettings();
+              this.display();
+            })
+        );
+      }
+    }
+
     new Setting(scansDiv)
-      .setName('Scanner Folder Path')
-      .setDesc('Root folder where scanner saves PDFs (e.g., C:\\Scans\\Canon)')
-      .addText((text) =>
-        text
-          .setPlaceholder('C:\\Scans\\Canon')
-          .setValue(this.plugin.settings.Scans.scanFolderPath)
-          .onChange(async (value) => {
-            this.plugin.settings.Scans.scanFolderPath = value;
+      .setName('Add Scanner Folder')
+      .setDesc('Add a folder where your scanner saves PDFs (e.g., C:\\Scans\\Canon)')
+      .addButton((btn) =>
+        btn.setButtonText('Add').onClick(async () => {
+          const modal = new PromptModal(this.app, 'Enter scanner folder path');
+          const folderPath = await modal.openPrompt();
+          if (folderPath) {
+            this.plugin.settings.Scans.WatchFolders.push(folderPath);
             await this.plugin.saveSettings();
-          })
+            this.display();
+          }
+        })
       );
+
+    containerEl.createEl('h4', { text: 'Scan Processing Settings' });
 
     // Stability delay
     new Setting(scansDiv)
@@ -454,62 +486,6 @@ export class JinxxToolsSettingTab extends PluginSettingTab {
             this.plugin.settings.Scans.makeBackupBeforeAppend = value;
             await this.plugin.saveSettings();
           })
-      );
-
-    // Naming pattern
-    new Setting(scansDiv)
-      .setName('Naming Pattern')
-      .setDesc('Pattern for new scan PDFs: {course}, {YYYY-MM-DD}, {counter}')
-      .addText((text) =>
-        text
-          .setPlaceholder('{course}_{YYYY-MM-DD}_{counter}.pdf')
-          .setValue(this.plugin.settings.Scans.namingPattern)
-          .onChange(async (value) => {
-            this.plugin.settings.Scans.namingPattern = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    // Watch Folders section
-    const watchFolders = this.plugin.settings.Scans.WatchFolders;
-    
-    if (watchFolders.length === 0) {
-      new Setting(scansDiv)
-        .setName('No watch folders configured')
-        .setDesc('Add folders to watch for scans');
-    } else {
-      for (let i = 0; i < watchFolders.length; i++) {
-        const folder = watchFolders[i];
-        const setting = new Setting(scansDiv)
-          .setName(folder)
-          .setDesc(`Watch folder ${i + 1}`);
-
-        setting.addButton((btn) =>
-          btn
-            .setButtonText('Remove')
-            .setWarning()
-            .onClick(async () => {
-              this.plugin.settings.Scans.WatchFolders.splice(i, 1);
-              await this.plugin.saveSettings();
-              this.display();
-            })
-        );
-      }
-    }
-
-    new Setting(scansDiv)
-      .setName('Add Watch Folder')
-      .setDesc('Add a new folder to watch for scans')
-      .addButton((btn) =>
-        btn.setButtonText('Add').onClick(async () => {
-          const modal = new PromptModal(this.app, 'Enter folder path to watch');
-          const folderPath = await modal.openPrompt();
-          if (folderPath) {
-            this.plugin.settings.Scans.WatchFolders.push(folderPath);
-            await this.plugin.saveSettings();
-            this.display();
-          }
-        })
       );
 
     // Reset to defaults

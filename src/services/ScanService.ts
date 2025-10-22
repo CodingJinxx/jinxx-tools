@@ -101,23 +101,36 @@ export class ScanService {
    * Start a new scan session
    */
   async startSession(): Promise<{ ok: boolean; reason?: string; session?: ScanSession }> {
-    const scanRoot = this.plugin.settings.Scans.scanFolderPath;
+    const watchFolders = this.plugin.settings.Scans.WatchFolders;
     
-    if (!scanRoot) {
-      return { ok: false, reason: 'No scanner folder path configured. Please configure it in Settings.' };
+    if (!watchFolders || watchFolders.length === 0) {
+      return { ok: false, reason: 'No scanner watch folders configured. Please add at least one in Settings.' };
     }
 
-    try {
-      // Check if scanner folder exists
-      await stat(scanRoot);
-    } catch (e) {
-      return { ok: false, reason: `Scanner folder not found: ${scanRoot}` };
+    // Find all valid day folders across all watch folders
+    const candidates: { scanRoot: string; dayFolder: string }[] = [];
+    
+    for (const scanRoot of watchFolders) {
+      try {
+        await stat(scanRoot);
+        const dayFolder = await this.getDayFolder(scanRoot);
+        if (dayFolder) {
+          candidates.push({ scanRoot, dayFolder });
+        }
+      } catch (e) {
+        console.warn(`Scanner folder not accessible: ${scanRoot}`, e);
+      }
     }
 
-    const dayFolder = await this.getDayFolder(scanRoot);
-    if (!dayFolder) {
-      return { ok: false, reason: 'No day folder found in scanner directory. Ensure scanner creates folders like YYYY_MM_DD.' };
+    if (candidates.length === 0) {
+      return { 
+        ok: false, 
+        reason: 'No day folders found in any scanner watch folder. Ensure scanner creates folders like YYYY_MM_DD.' 
+      };
     }
+
+    // Use the first valid candidate (most recent day folder due to sorting in getDayFolder)
+    const { scanRoot, dayFolder } = candidates[0];
 
     const sessionId = `${new Date().toISOString().replace(/[:.]/g, '-')}_${Math.random().toString(36).substr(2, 6)}`;
     const snapshotBefore = await this.takeSnapshot(dayFolder);
@@ -332,12 +345,12 @@ export class ScanService {
    * Archive original files after merge
    */
   async archiveFiles(files: string[]): Promise<void> {
-    if (!this.plugin.settings.Scans.archiveAfterMerge) {
+    if (!this.plugin.settings.Scans.archiveAfterMerge || !this.currentSession) {
       return;
     }
 
     const archiveFolder = this.plugin.settings.Scans.archiveFolderPath || 
-      path.join(this.plugin.settings.Scans.scanFolderPath, 'archive');
+      path.join(this.currentSession.scanRoot, 'archive');
 
     try {
       await mkdir(archiveFolder, { recursive: true });

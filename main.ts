@@ -41,38 +41,70 @@ export default class JinxxToolsPlugin extends Plugin {
 			}
 		});
 
-		this.addCommand({
-			id: 'jinxx-archive-course',
-			name: 'Archive Course',
-			callback: async () => {
-				const cs = new CourseService(this);
-				const res = await cs.archiveCourse();
-				if (res.ok) new Notice(`Archived course to ${res.path}`);
-				else if (res.reason !== 'cancelled' && res.reason !== 'no-course-name') new Notice(`Archive failed: ${res.reason}`);
-			}
-		});
+	this.addCommand({
+		id: 'jinxx-archive-course',
+		name: 'Archive Course',
+		callback: async () => {
+			const cs = new CourseService(this);
+			const courses = await cs.discoverCourses();
 
-		this.addCommand({
-			id: 'jinxx-restore-course',
-			name: 'Restore Course',
-			callback: async () => {
-				const cs = new CourseService(this);
-				await this.handleRestoreArchive(cs);
+			if (courses.length === 0) {
+				new Notice('No courses found.');
+				return;
 			}
-		});
 
-		this.addCommand({
-			id: 'jinxx-rename-course',
-			name: 'Rename Course',
-			callback: async () => {
-				const cs = new CourseService(this);
-				const res = await cs.renameCourse();
-				if (res.ok) new Notice(`Renamed course — ${res.compact}`);
-				else if (res.reason !== 'cancelled' && res.reason !== 'no-old-name' && res.reason !== 'no-new-name') new Notice(`Rename failed: ${res.reason}`);
+			const sugg = new SimpleSuggester(
+				this.app,
+				courses,
+				(c: string) => c,
+				'Select course to archive'
+			);
+
+			const selectedCourse = await sugg.openAndChoose();
+			if (!selectedCourse) return;
+
+			const res = await cs.archiveCourse({ courseName: String(selectedCourse) });
+			if (res.ok) new Notice(`Archived course to ${res.path}`);
+			else if (res.reason !== 'cancelled' && res.reason !== 'no-course-name') new Notice(`Archive failed: ${res.reason}`);
+		}
+	});
+
+	this.addCommand({
+		id: 'jinxx-restore-course',
+		name: 'Restore Course',
+		callback: async () => {
+			const cs = new CourseService(this);
+			await this.handleRestoreArchive(cs);
+		}
+	});
+
+	this.addCommand({
+		id: 'jinxx-rename-course',
+		name: 'Rename Course',
+		callback: async () => {
+			const cs = new CourseService(this);
+			const courses = await cs.discoverCourses();
+
+			if (courses.length === 0) {
+				new Notice('No courses found.');
+				return;
 			}
-		});
 
-		// Scan command
+			const sugg = new SimpleSuggester(
+				this.app,
+				courses,
+				(c: string) => c,
+				'Select course to rename'
+			);
+
+			const selectedCourse = await sugg.openAndChoose();
+			if (!selectedCourse) return;
+
+			const res = await cs.renameCourse({ oldName: String(selectedCourse) });
+			if (res.ok) new Notice(`Renamed course — ${res.compact}`);
+			else if (res.reason !== 'cancelled' && res.reason !== 'no-old-name' && res.reason !== 'no-new-name') new Notice(`Rename failed: ${res.reason}`);
+		}
+	});		// Scan command
 		this.addCommand({
 			id: 'jinxx-scan',
 			name: 'Scan',
@@ -123,14 +155,20 @@ export default class JinxxToolsPlugin extends Plugin {
 				continue;
 			}
 
-			// User picked a course
-			const courseName = picked;
-			const opts = ['✖️ Close', '🗑️ Delete', '📦 Archive', '♻️ Restore', '✏️ Rename'];
-			const actionSugg = new SimpleSuggester(this.app, opts, (o) => o, `Course: ${courseName} — choose action`);
-			const action = await actionSugg.openAndChoose();
-			if (!action || action === '✖️ Close') continue;
+		// User picked a course
+		const courseName = picked;
+		const opts = ['✖️ Close', '📄 Scan', '🗑️ Delete', '📦 Archive', '♻️ Restore', '✏️ Rename'];
+		const actionSugg = new SimpleSuggester(this.app, opts, (o) => o, `Course: ${courseName} — choose action`);
+		const action = await actionSugg.openAndChoose();
+		if (!action || action === '✖️ Close') continue;
 
-			if (action === '🗑️ Delete') {
+		if (action === '📄 Scan') {
+			// Run scan for this specific course
+			await this.handleScanForCourse(courseName);
+			return; // Exit the manage courses loop to close the suggester
+		}
+
+		if (action === '🗑️ Delete') {
 				const res = await cs.deleteCourse({ courseName });
 				if (res.ok) new Notice(`Deleted ${courseName} — ${res.compact}`);
 				else if (res.reason !== 'cancelled') new Notice(`Delete failed: ${res.reason}`);
@@ -196,9 +234,9 @@ export default class JinxxToolsPlugin extends Plugin {
 	}
 
 	async handleScan() {
-		// Check if scanner folder is configured
-		if (!this.settings.Scans.scanFolderPath) {
-			new Notice('Scanner folder not configured. Please configure it in Settings → Scans.');
+		// Check if scanner watch folders are configured
+		if (!this.settings.Scans.WatchFolders || this.settings.Scans.WatchFolders.length === 0) {
+			new Notice('No scanner watch folders configured. Please add at least one in Settings → Scans.');
 			return;
 		}
 
@@ -298,6 +336,101 @@ export default class JinxxToolsPlugin extends Plugin {
 		}
 
 		// Step 3: Open live monitoring modal
+		const scanService = new ScanService(this.app, this);
+		const modal = new LiveScanMonitorModal(
+			this.app,
+			this,
+			scanService,
+			courseName,
+			outputMode,
+			outputPath
+		);
+		modal.open();
+	}
+
+	async handleScanForCourse(courseName: string) {
+		// Check if scanner watch folders are configured
+		if (!this.settings.Scans.WatchFolders || this.settings.Scans.WatchFolders.length === 0) {
+			new Notice('No scanner watch folders configured. Please add at least one in Settings → Scans.');
+			return;
+		}
+
+		const universityFolder = this.settings.BaseFolders.University || '20_University';
+		const courseScansFolder = `${universityFolder}/Scans/${courseName}`;
+
+		// Ensure scans folder exists
+		const abstractFolder = this.app.vault.getAbstractFileByPath(courseScansFolder);
+		if (!abstractFolder) {
+			try {
+				await this.app.vault.createFolder(courseScansFolder);
+			} catch (e) {
+				new Notice(`Failed to create scans folder: ${(e as any).message}`);
+				return;
+			}
+		}
+
+		// Step 1: Create new or append to existing
+		const pdfFiles = this.app.vault.getFiles().filter(
+			f => f.path.startsWith(courseScansFolder) && f.extension === 'pdf'
+		);
+
+		const modeOptions = ['📄 Create New Scan', '📎 Append to Existing'];
+		const modeSugg = new SimpleSuggester(
+			this.app,
+			modeOptions,
+			(opt: string) => opt,
+			'Create new scan or append to existing?'
+		);
+
+		const modeChoice = await modeSugg.openAndChoose();
+		if (!modeChoice) return;
+
+		let outputMode: 'create' | 'append';
+		let outputPath: string;
+
+		if (String(modeChoice) === '📄 Create New Scan') {
+			// Prompt for filename
+			const prompt = new PromptModal(this.app, 'Enter filename for new scan (without .pdf)');
+			const filename = await prompt.openPrompt();
+			if (!filename) return;
+
+			const sanitizedFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+			const outputVaultPath = `${courseScansFolder}/${sanitizedFilename}`;
+
+			// Check if already exists
+			if (this.app.vault.getAbstractFileByPath(outputVaultPath)) {
+				new Notice('A scan with that name already exists');
+				return;
+			}
+
+			outputMode = 'create';
+			const adapter = this.app.vault.adapter as any;
+			const vaultPath = adapter.basePath || '';
+			outputPath = path.join(vaultPath, outputVaultPath);
+		} else {
+			// Select existing PDF
+			if (pdfFiles.length === 0) {
+				new Notice('No existing scans found. Please create a new one.');
+				return;
+			}
+
+			const pdfSugg = new SimpleSuggester(
+				this.app,
+				pdfFiles.map(f => f.path),
+				(p: string) => path.basename(p),
+				'Select scan to append to'
+			);
+
+			const selectedPdf = await pdfSugg.openAndChoose();
+			if (!selectedPdf) return;
+
+			outputMode = 'append';
+			const adapter = this.app.vault.adapter as any;
+			const vaultPath = adapter.basePath || '';
+			outputPath = path.join(vaultPath, String(selectedPdf));
+		}
+
+		// Step 2: Open live monitoring modal
 		const scanService = new ScanService(this.app, this);
 		const modal = new LiveScanMonitorModal(
 			this.app,

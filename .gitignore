@@ -12,6 +12,13 @@ node_modules
 # They should be uploaded to GitHub releases instead.
 main.js
 
+# Local publish output for testing
+publish/
+publish/**
+
+# packaged release zips
+*.zip
+
 # Exclude sourcemaps
 *.map
 
@@ -20,3 +27,6 @@ data.json
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
+
+# Windows thumbnail cache
+Thumbs.db

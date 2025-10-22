@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import fs from 'fs';
+import path from 'path';
 
 const banner =
 `/*
@@ -43,6 +45,36 @@ const context = await esbuild.context({
 
 if (prod) {
 	await context.rebuild();
+
+	// Ensure publish/<plugin-id> directory exists and copy release artifacts
+	try {
+		const manifestPath = path.resolve(process.cwd(), 'manifest.json');
+		let pluginId = 'plugin';
+		if (fs.existsSync(manifestPath)) {
+			try {
+				const manifestRaw = fs.readFileSync(manifestPath, 'utf8');
+				const manifest = JSON.parse(manifestRaw);
+				if (manifest && manifest.id) pluginId = String(manifest.id);
+			} catch (e) {
+				console.warn('Failed to read/parse manifest.json for publish folder name', e);
+			}
+		}
+		const publishDir = path.resolve(process.cwd(), 'publish', pluginId);
+		if (!fs.existsSync(publishDir)) fs.mkdirSync(publishDir, { recursive: true });
+		// copy main.js and manifest.json; styles.css is optional
+		const assets = ['main.js', 'manifest.json', 'styles.css'];
+		for (const a of assets) {
+			const src = path.resolve(process.cwd(), a);
+			const dest = path.resolve(publishDir, a);
+			if (fs.existsSync(src)) {
+				fs.copyFileSync(src, dest);
+				console.log(`Copied ${a} -> publish/${pluginId}/${a}`);
+			}
+		}
+	} catch (e) {
+		console.error('Failed to write publish directory', e);
+	}
+
 	process.exit(0);
 } else {
 	await context.watch();

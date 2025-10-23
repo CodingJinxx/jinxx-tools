@@ -5,6 +5,8 @@ import { JinxxToolsSettings, DEFAULT_SETTINGS, JinxxToolsSettingTab } from './sr
 import { ScanService } from './src/services/ScanService';
 import { LiveScanMonitorModal } from './src/ui/LiveScanMonitorModal';
 import { PromptModal } from './src/ui/PromptModal';
+import { YesNoModal } from './src/ui/YesNoModal';
+import { PDFPreviewModal } from './src/ui/PDFPreviewModal';
 import { ConfigService } from './src/services/ConfigService';
 import type { JinxxToolsAPI } from './src/api/PublicAPI';
 import { JinxxToolsAPIImpl } from './src/api/APIImpl';
@@ -134,6 +136,15 @@ export default class JinxxToolsPlugin extends Plugin {
 			name: 'Scan',
 			callback: async () => {
 				await this.handleScan();
+			}
+		});
+
+		// Rotate PDF command
+		this.addCommand({
+			id: 'jinxx-rotate-pdf',
+			name: 'Rotate pages in PDF',
+			callback: async () => {
+				await this.handleRotatePDF();
 			}
 		});
 
@@ -609,6 +620,70 @@ export default class JinxxToolsPlugin extends Plugin {
 			outputPath
 		);
 		modal.open();
+	}
+
+	async handleRotatePDF() {
+		// 1. Get all PDFs in vault
+		const pdfs = this.app.vault.getFiles().filter(f => f.extension === 'pdf');
+		
+		if (pdfs.length === 0) {
+			new Notice('No PDF files found in vault');
+			return;
+		}
+		
+		// 2. Use SimpleSuggester to let user pick a PDF
+		const suggester = new SimpleSuggester(
+			this.app,
+			pdfs,
+			(f) => f.path,
+			'Select PDF to rotate'
+		);
+		
+		const chosen = await suggester.openAndChoose();
+		if (!chosen) return; // Cancelled
+		
+		// 3. Open PDFPreviewModal in 'edit-existing' mode
+		const preview = new PDFPreviewModal(
+			this.app,
+			'edit-existing',
+			chosen.path,
+			async (rotations) => {
+				// Only apply rotations if there are any
+				if (rotations.size === 0) {
+					new Notice('No rotations applied');
+					return;
+				}
+
+				// 4. Ask if user wants to overwrite or save as new
+				const overwrite = await new YesNoModal(
+					this.app,
+					'Overwrite original PDF? (No = save as new file)'
+				).openPrompt();
+				
+				let outputPath = chosen.path;
+				if (!overwrite) {
+					// Generate new filename: original-rotated.pdf
+					const baseName = chosen.basename;
+					const parentPath = chosen.parent?.path || '';
+					outputPath = parentPath ? `${parentPath}/${baseName}-rotated.pdf` : `${baseName}-rotated.pdf`;
+				}
+				
+				// 5. Apply rotations
+				const scanService = new ScanService(this.app, this);
+				const res = await scanService.rotatePDF(
+					chosen.path,
+					rotations,
+					outputPath
+				);
+				
+				if (!res.ok) throw new Error(res.reason);
+				
+				new Notice(`✅ PDF saved to ${outputPath}`);
+			}
+		);
+		
+		const saved = await preview.openAndAwait();
+		if (!saved) return; // Cancelled
 	}
 
 	async loadSettings() {

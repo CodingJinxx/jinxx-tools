@@ -280,20 +280,33 @@ export class ScanService {
 
   /**
    * Merge PDF files into a single output file
+   * @param inputFiles - Array of PDF file paths to merge
+   * @param outputPath - Where to save the merged PDF
+   * @param pageRotations - Optional map of page index to rotation degrees (0, 90, 180, 270)
    */
-  async mergeFiles(inputFiles: string[], outputPath: string): Promise<{ ok: boolean; reason?: string }> {
+  async mergeFiles(inputFiles: string[], outputPath: string, pageRotations?: Map<number, number>): Promise<{ ok: boolean; reason?: string }> {
     try {
       // Dynamic import of pdf-lib
-      const { PDFDocument } = await import('pdf-lib');
+      const { PDFDocument, degrees } = await import('pdf-lib');
 
       const mergedPdf = await PDFDocument.create();
+      let currentPageIndex = 0;
 
       for (const inputPath of inputFiles) {
         try {
           const pdfBytes = await readFile(inputPath);
           const pdf = await PDFDocument.load(pdfBytes);
           const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-          copiedPages.forEach((page: unknown) => mergedPdf.addPage(page as any));
+          
+          copiedPages.forEach((page: any) => {
+            // Apply rotation if specified
+            if (pageRotations && pageRotations.has(currentPageIndex)) {
+              const rotation = pageRotations.get(currentPageIndex) || 0;
+              page.setRotation(degrees(rotation));
+            }
+            mergedPdf.addPage(page);
+            currentPageIndex++;
+          });
         } catch (e) {
           console.error(`Failed to merge file ${inputPath}:`, e);
           return { ok: false, reason: `Failed to merge ${path.basename(inputPath)}: ${String(e)}` };
@@ -317,10 +330,13 @@ export class ScanService {
 
   /**
    * Append PDF files to an existing PDF
+   * @param inputFiles - Array of PDF file paths to append
+   * @param targetPath - Path to existing PDF to append to
+   * @param pageRotations - Optional map of page index to rotation degrees (0, 90, 180, 270)
    */
-  async appendToFile(inputFiles: string[], targetPath: string): Promise<{ ok: boolean; reason?: string }> {
+  async appendToFile(inputFiles: string[], targetPath: string, pageRotations?: Map<number, number>): Promise<{ ok: boolean; reason?: string }> {
     try {
-      const { PDFDocument } = await import('pdf-lib');
+      const { PDFDocument, degrees } = await import('pdf-lib');
 
       // Create backup if configured
       if (this.plugin.settings.Scans.makeBackupBeforeAppend) {
@@ -338,13 +354,25 @@ export class ScanService {
       const existingBytes = await readFile(targetPath);
       const targetPdf = await PDFDocument.load(existingBytes);
 
+      // Get the starting page index (for rotation mapping)
+      let currentPageIndex = 0;
+
       // Append new pages
       for (const inputPath of inputFiles) {
         try {
           const pdfBytes = await readFile(inputPath);
           const pdf = await PDFDocument.load(pdfBytes);
           const copiedPages = await targetPdf.copyPages(pdf, pdf.getPageIndices());
-          copiedPages.forEach((page: unknown) => targetPdf.addPage(page as any));
+          
+          copiedPages.forEach((page: any) => {
+            // Apply rotation if specified
+            if (pageRotations && pageRotations.has(currentPageIndex)) {
+              const rotation = pageRotations.get(currentPageIndex) || 0;
+              page.setRotation(degrees(rotation));
+            }
+            targetPdf.addPage(page);
+            currentPageIndex++;
+          });
         } catch (e) {
           console.error(`Failed to append file ${inputPath}:`, e);
           return { ok: false, reason: `Failed to append ${path.basename(inputPath)}: ${String(e)}` };
@@ -392,6 +420,60 @@ export class ScanService {
       }
     } catch (e) {
       console.error('Failed to create archive folder:', e);
+    }
+  }
+
+  /**
+   * Rotate pages in an existing PDF and save
+   * @param inputPath - Vault path to existing PDF
+   * @param pageRotations - Map of page index to rotation degrees (0, 90, 180, 270)
+   * @param outputPath - Where to save (if different from input, preserves original)
+   */
+  async rotatePDF(
+    inputPath: string,
+    pageRotations: Map<number, number>,
+    outputPath?: string
+  ): Promise<{ ok: boolean; reason?: string }> {
+    try {
+      const { PDFDocument, degrees } = await import('pdf-lib');
+
+      // Read PDF from vault
+      const tfile = this.app.vault.getFiles().find(f => f.path === inputPath);
+      if (!tfile) {
+        return { ok: false, reason: 'file-not-found' };
+      }
+
+      const pdfData = await this.app.vault.readBinary(tfile);
+      const pdfDoc = await PDFDocument.load(pdfData);
+
+      // Apply rotations (relative to existing rotation)
+      const pages = pdfDoc.getPages();
+      console.log(`Applying rotations to ${pageRotations.size} pages`);
+      for (const [pageIndex, rotation] of pageRotations) {
+        if (pageIndex >= 0 && pageIndex < pages.length) {
+          const page = pages[pageIndex];
+          const currentRotation = page.getRotation().angle;
+          const newRotation = (currentRotation + rotation) % 360;
+          console.log(`Page ${pageIndex + 1}: current=${currentRotation}°, adding=${rotation}°, final=${newRotation}°`);
+          page.setRotation(degrees(newRotation));
+          console.log(`✓ Page ${pageIndex + 1} rotation set to ${newRotation}°`);
+        } else {
+          console.warn(`Page index ${pageIndex} out of range (total pages: ${pages.length})`);
+        }
+      }
+
+      // Save
+      const pdfBytes = await pdfDoc.save();
+      const savePath = outputPath || inputPath;
+      
+      // Use vault adapter to write (convert Uint8Array to ArrayBuffer)
+      const outputBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
+      await this.app.vault.adapter.writeBinary(savePath, outputBuffer);
+
+      return { ok: true };
+    } catch (e) {
+      console.error('rotatePDF failed', e);
+      return { ok: false, reason: String((e as Error).message || e) };
     }
   }
 

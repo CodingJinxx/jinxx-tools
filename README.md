@@ -34,19 +34,21 @@ Create and manage courses with a complete folder structure automatically generat
 
 ### 📄 Scanning & PDF Management
 
-Scan physical documents directly into your vault with live monitoring:
+Scan physical documents directly into your vault with live monitoring and page rotation:
 
 1. **Start a scan session** to establish a baseline
 2. **Scan documents** using your physical scanner
 3. **Live monitoring** detects new PDFs automatically
-4. **Review & organize** files before merging:
-   - Reorder pages with ↑↓ buttons
-   - Exclude unwanted files
-   - Choose target course
-5. **Merge** into a single PDF or append to existing scan
+4. **Preview & rotate** pages before saving:
+   - Visual page grid with rotation indicators
+   - Rotate individual pages (90°, 180°, 270°)
+   - Keyboard shortcuts: R (rotate clockwise), Shift+R (counter-clockwise)
+   - Arrow keys for navigation
+5. **Save** merged PDF or append to existing scan
 6. **Automatic archiving** of original single-page PDFs (optional)
 
-**Key Features**:
+**Additional Features**:
+- **Rotate existing PDFs**: Command to open and rotate pages in any PDF in your vault
 - Stability checks ensure files are fully written before processing
 - Subfolder support for organizing scans (e.g., `Week1/`, `Lectures/`)
 - Backup before append (optional)
@@ -181,20 +183,42 @@ Then reload Obsidian and enable the plugin.
      - Enter filename (e.g., "Lecture_Week1")
 
 2. **Live Monitoring Modal Opens**:
-   - Shows "Waiting for PDFs..." status
-   - Scan your documents (plugin detects new PDFs automatically)
-   - Files appear in the list as they're detected
+   - Shows real-time page count
+   - Detects new PDFs as they're scanned
+   - Click **✅ Preview & Save** when done scanning
 
-3. **Review & Organize**:
-   - ✅ Checkbox: Include/exclude files
-   - ↑↓ Buttons: Reorder pages
-   - Auto-ordered by numeric sequence (IMG_0001, IMG_0002) or modification time
+3. **PDF Preview & Rotation**:
+   - Page grid displays all scanned pages with rotation indicators
+   - Select a page (click or arrow keys)
+   - Rotate with buttons (↻ ↺) or keyboard (R / Shift+R)
+   - Modified pages show rotation angle (90°, 180°, 270°)
+   - Footer displays rotation count
+   - Click **Save** to merge with rotations, or **Cancel** to abort
 
-4. **Merge**:
-   - Click **Merge PDFs** button
-   - Plugin merges all checked files in order
+4. **Result**:
+   - Merged PDF saved with rotations applied
    - Original files archived if configured
-   - Notice shows result with file count and path
+   - Success notice shows file count and path
+
+### Rotating Existing PDFs
+
+**Command**: `Jinxx Tools: Rotate pages in PDF`
+
+Fix orientation issues in any PDF already in your vault:
+
+1. Run the command
+2. Select a PDF from the suggester (shows all PDFs)
+3. PDF Preview modal opens with all pages
+4. Rotate pages as needed
+5. Choose:
+   - **Overwrite**: Update original file
+   - **Save as new**: Creates `{filename}-rotated.pdf`
+6. Rotations applied immediately
+
+**Use Cases**:
+- Fix scanned pages placed upside-down in scanner
+- Correct mixed landscape/portrait documents
+- Adjust existing course materials for readability
 
 **Settings** (optional):
 - **Stability Delay**: Wait time between size checks (default: 1000ms)

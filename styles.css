@@ -109,3 +109,253 @@ If your plugin does not need CSS, delete this file.
   font-size: 1.1em;
   color: var(--text-accent);
 }
+
+/* PDF Preview Modal */
+.modal-container:has(.jinxx-pdf-preview-modal) .modal {
+  width: 85vw !important;
+  max-width: 1200px !important;
+  min-width: 900px !important;
+}
+
+.jinxx-pdf-preview-modal {
+  width: 100%;
+}
+
+.jinxx-pdf-mode {
+  color: var(--text-muted);
+  margin-bottom: 1em;
+}
+
+/* Pagination controls */
+.jinxx-pdf-pagination-info {
+  text-align: center;
+  margin: 1em 0;
+  font-weight: bold;
+  color: var(--text-normal);
+}
+
+.jinxx-pdf-grid-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  margin: 1em 0;
+}
+
+.jinxx-pdf-nav-btn {
+  padding: 0.5em 1em;
+  font-size: 1em;
+  min-width: 50px;
+  flex-shrink: 0;
+}
+
+.jinxx-pdf-nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.jinxx-pdf-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1em;
+  padding: 0.5em;
+  overflow-x: hidden;
+}
+
+.jinxx-pdf-page-card {
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 0.75em;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.jinxx-pdf-page-card:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-secondary);
+}
+
+.jinxx-pdf-page-selected {
+  border-color: var(--interactive-accent);
+  background: var(--background-secondary-alt);
+  box-shadow: 0 0 8px var(--interactive-accent-hover);
+}
+
+.jinxx-pdf-page-preview {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  min-height: 120px;
+  overflow: hidden;
+}
+
+.jinxx-pdf-page-preview canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  transition: transform 0.2s ease;
+}
+
+.jinxx-pdf-page-number-fallback {
+  font-size: 2em;
+  font-weight: bold;
+  color: var(--text-muted);
+}
+
+.jinxx-pdf-page-label {
+  font-size: 0.9em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0.25em 0;
+}
+
+.jinxx-pdf-page-info {
+  margin-bottom: 0.5em;
+}
+
+.jinxx-pdf-page-number {
+  font-size: 1.8em;
+  font-weight: bold;
+  color: var(--text-normal);
+}
+
+.jinxx-pdf-page-rotation {
+  font-size: 0.9em;
+  color: var(--text-muted);
+  margin-top: 0.25em;
+}
+
+.jinxx-pdf-page-rotation.jinxx-pdf-rotated {
+  color: var(--interactive-accent);
+  font-weight: bold;
+}
+
+.jinxx-pdf-controls {
+  display: flex;
+  justify-content: center;
+  gap: 0.5em;
+}
+
+.jinxx-pdf-btn-rotate {
+  padding: 0.25em 0.75em;
+  font-size: 1.2em;
+  cursor: pointer;
+}
+
+.jinxx-pdf-footer {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 1em;
+  margin-top: 1em;
+}
+
+.jinxx-pdf-tip {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  margin-bottom: 0.5em;
+}
+
+.jinxx-pdf-status {
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 1em;
+}
+
+.jinxx-pdf-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+}
+
+.jinxx-pdf-buttons button {
+  padding: 0.5em 1.5em;
+}
+
+/* Full-screen preview modal */
+.modal-container:has(.jinxx-fullscreen-page-modal) .modal {
+  width: 85vw !important;
+  height: 85vh !important;
+  max-width: 1400px !important;
+}
+
+.jinxx-fullscreen-page-modal {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+}
+
+.jinxx-fullscreen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75em 1em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.jinxx-fullscreen-title-section h3 {
+  margin: 0;
+}
+
+.jinxx-fullscreen-rotation-controls {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+}
+
+.jinxx-fullscreen-rotate-btn {
+  padding: 0.5em 1em;
+  font-size: 1em;
+  cursor: pointer;
+}
+
+.jinxx-fullscreen-close {
+  padding: 0.5em 1em;
+  font-size: 1.2em;
+  cursor: pointer;
+  margin-left: 1em;
+}
+
+.jinxx-fullscreen-canvas-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1em;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.jinxx-fullscreen-canvas-container canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.jinxx-fullscreen-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75em 1em;
+  border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.jinxx-fullscreen-rotation-text {
+  font-weight: bold;
+  color: var(--text-muted);
+}

@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from 'obsidian';
 import type JinxxToolsPlugin from '../../main';
 import { ScanService } from '../services/ScanService';
+import { PDFPreviewModal } from './PDFPreviewModal';
 
 export class LiveScanMonitorModal extends Modal {
   private plugin: JinxxToolsPlugin;
@@ -95,7 +96,7 @@ export class LiveScanMonitorModal extends Modal {
     const buttonContainer = container.createDiv({ cls: 'jinxx-scan-buttons' });
 
     buttonContainer.createEl('button', {
-      text: '✅ Finish Scanning',
+      text: '✅ Preview & Save',
       cls: 'mod-cta',
     }).addEventListener('click', async () => {
       await this.finishScanning();
@@ -188,29 +189,45 @@ export class LiveScanMonitorModal extends Modal {
     const orderedFiles = this.scanService.orderFiles(stableFiles);
     const filePaths = orderedFiles.map(f => f.path);
 
-    // Merge or append
+    // Close this modal before opening preview
     this.close();
-    new Notice(`Merging ${filePaths.length} pages...`);
 
-    let mergeResult;
-    if (this.outputMode === 'create') {
-      mergeResult = await this.scanService.mergeFiles(filePaths, this.outputPath);
-    } else {
-      mergeResult = await this.scanService.appendToFile(filePaths, this.outputPath);
-    }
+    // Open preview modal
+    const preview = new PDFPreviewModal(
+      this.app,
+      'new-scan',
+      filePaths,
+      async (rotations) => {
+        // Merge or append with rotations
+        new Notice(`Merging ${filePaths.length} pages...`);
 
-    if (mergeResult.ok) {
-      new Notice(`✅ Successfully merged ${filePaths.length} pages to ${this.outputPath}`);
-      
-      // Archive if configured
-      if (this.plugin.settings.Scans.archiveAfterMerge) {
-        await this.scanService.archiveFiles(filePaths);
+        let mergeResult;
+        if (this.outputMode === 'create') {
+          mergeResult = await this.scanService.mergeFiles(filePaths, this.outputPath, rotations);
+        } else {
+          mergeResult = await this.scanService.appendToFile(filePaths, this.outputPath, rotations);
+        }
+
+        if (!mergeResult.ok) {
+          throw new Error(mergeResult.reason);
+        }
+
+        new Notice(`✅ Successfully merged ${filePaths.length} pages to ${this.outputPath}`);
+        
+        // Archive if configured
+        if (this.plugin.settings.Scans.archiveAfterMerge) {
+          await this.scanService.archiveFiles(filePaths);
+        }
+
+        this.scanService.clearSession();
       }
-    } else {
-      new Notice(`❌ Merge failed: ${mergeResult.reason}`);
-    }
+    );
 
-    this.scanService.clearSession();
+    const saved = await preview.openAndAwait();
+    if (!saved) {
+      // User cancelled the preview, clear session
+      this.scanService.clearSession();
+    }
   }
 
   private refresh() {

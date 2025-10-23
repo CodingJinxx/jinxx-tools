@@ -1,7 +1,7 @@
 # Scan Feature - Testing Guide
 
 ## Overview
-The Scan feature allows you to capture single-page PDF files from a scanner, detect them automatically, and merge them into course-specific scan documents in your vault.
+The Scan feature allows you to capture single-page PDF files from a scanner, detect them automatically, and merge them into course-specific scan documents in your vault. The feature includes a PDF preview modal where you can rotate individual pages before saving.
 
 ## Setup
 
@@ -33,26 +33,44 @@ The Scan feature allows you to capture single-page PDF files from a scanner, det
 ### Step 3: Finish Scan Session
 1. Run command: **Finish Scan Session**
 2. Plugin detects new PDF files and checks stability
-3. Interactive modal opens showing detected files
+3. PDF Preview modal opens automatically
 
-### Step 4: Review and Merge
-The modal shows:
-- **File list** with checkboxes (exclude unwanted pages)
-- **Reorder buttons** (↑↓) to change page order
-- **Course selector** to choose target course
-- **Create/Append** options for output
+### Step 4: Review, Rotate, and Save
+The PDF Preview modal shows:
+- **Page grid** with thumbnails (page numbers and current rotation)
+- **Rotation controls** for each page (↻ clockwise, ↺ counter-clockwise)
+- **Keyboard shortcuts**: R = rotate clockwise, Shift+R = rotate counter-clockwise
+- **Arrow keys** for navigation between pages
+- **Status footer** showing how many pages have been rotated
 
 Actions:
-1. **Uncheck** files you want to exclude
-2. **Reorder** pages using ↑↓ buttons
-3. **Choose Course** - select target course
-4. **Choose Existing** or **Create New** - append to existing PDF or create new one
-5. Click **Merge PDFs** to execute
+1. **Click a page** to select it
+2. **Rotate pages** using buttons or keyboard shortcuts (R / Shift+R)
+3. **Navigate** with arrow keys or mouse clicks
+4. **Review rotations** - rotated pages show degree indicator (90°, 180°, 270°)
+5. Click **Save** to merge with rotations applied, or **Cancel** to return without saving
 
 ### Step 5: Result
-- Merged PDF saved to `{University}/Scans/{Course}/`
+- Merged PDF saved to `{University}/Scans/{Course}/` with rotations applied
 - Original files archived if configured
 - Success notice with file count and path
+
+## Rotating Existing PDFs
+
+### Command: Rotate Pages in PDF
+You can also rotate pages in existing PDFs already in your vault:
+
+1. Run command: **Rotate pages in PDF** (Ctrl+P → "Rotate pages in PDF")
+2. Select a PDF from the suggester (shows all PDFs in vault)
+3. PDF Preview modal opens in "edit-existing" mode
+4. Rotate pages as needed using the same controls
+5. Choose to **Overwrite** the original or **Save as new** file (-rotated suffix)
+6. Rotations are applied immediately
+
+### Use Cases
+- Fix scanned pages that were placed upside-down in the scanner
+- Correct orientation after scanning mixed landscape/portrait documents
+- Adjust existing course materials for better readability
 
 ## Testing with Dummy PDFs
 
@@ -98,15 +116,30 @@ copy "sample.pdf" "C:\Scans\Canon\2025_10_22\IMG_0003.pdf"
 5. File should be unchecked and disabled
 6. Wait for copy to complete, then retry
 
-#### 4. File Reordering
+#### 4. Page Rotation
 1. Start scan session
-2. Add PDFs: IMG_0001, IMG_0003, IMG_0002 (out of order)
+2. Add 3 dummy PDFs
 3. Finish scan session
-4. Files should be auto-ordered by numeric sequence
-5. Use ↑↓ buttons to manually reorder
-6. Merge and verify page order in output
+4. In PDF Preview modal:
+   - Select first page (click on it)
+   - Press R to rotate clockwise (should show 90°)
+   - Press R again (should show 180°)
+   - Press Shift+R to rotate counter-clockwise (should show 90°)
+   - Verify rotation indicator updates
+5. Save and open merged PDF in external viewer
+6. Verify pages are rotated correctly
 
-#### 5. Archive Originals
+#### 5. Edit Existing PDF
+1. Create or select an existing PDF in vault
+2. Run command: "Rotate pages in PDF"
+3. Select the PDF from suggester
+4. Rotate a few pages
+5. Choose "Save as new file" (creates {filename}-rotated.pdf)
+6. Verify both original and rotated versions exist
+7. Repeat with "Overwrite" option
+8. Verify original is updated
+
+#### 6. Archive Originals
 1. Enable "Archive After Merge" in settings
 2. Complete a merge
 3. Check that originals moved to archive folder

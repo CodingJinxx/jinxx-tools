@@ -1,10 +1,18 @@
-# Obsidian community plugin
+# Jinxx Tools - Obsidian Plugin Development Guide
 
-## Project overview
+## Project Overview
 
-- Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
-- Entry point: `main.ts` compiled to `main.js` and loaded by Obsidian.
-- Required release artifacts: `main.js`, `manifest.json`, and optional `styles.css`.
+**Jinxx Tools** is a course management and PDF scanning plugin for Obsidian.
+
+- **Type**: Obsidian Community Plugin (TypeScript → bundled JavaScript)
+- **Target**: Desktop-only (uses Node.js `fs` module for scanning)
+- **Entry point**: `main.ts` compiled to `main.js` and loaded by Obsidian
+- **Required artifacts**: `main.js`, `manifest.json`, and `styles.css`
+- **Core features**:
+  - Course lifecycle management (create, delete, archive, restore, rename)
+  - PDF scanning with live monitoring and merge capabilities
+  - Template system with Templater integration
+  - Customizable folder structures for notes organization
 
 ## Environment & tooling
 
@@ -40,29 +48,44 @@ npm run build
 - eslint will then create a report with suggestions for code improvement by file and line number.
 - If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder: `eslint ./src/`
 
-## File & folder conventions
+## File & Folder Conventions
 
-- **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
-- Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
-- **Example file structure**:
-  ```
-  src/
-    main.ts           # Plugin entry point, lifecycle management
-    settings.ts       # Settings interface and defaults
-    commands/         # Command implementations
-      command1.ts
-      command2.ts
-    ui/              # UI components, modals, views
-      modal.ts
-      view.ts
-    utils/           # Utility functions, helpers
-      helpers.ts
-      constants.ts
-    types.ts         # TypeScript interfaces and types
-  ```
-- **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
-- Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
-- Generated output should be placed at the plugin root or `dist/` depending on your build setup. Release artifacts must end up at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
+**This Project's Structure**:
+```
+jinxx-tools/
+├── main.ts                     # Plugin entry (lifecycle, command registration ONLY)
+├── src/
+│   ├── services/               # Business logic (NO UI interaction)
+│   │   ├── ConfigService.ts    # Settings I/O
+│   │   ├── CourseService.ts    # Course CRUD operations
+│   │   └── ScanService.ts      # PDF scanning & merging
+│   ├── settings/
+│   │   └── SettingTab.ts       # Settings UI + data model
+│   ├── ui/                     # Modal-based UI components
+│   │   ├── SimpleSuggester.ts  # Fuzzy picker wrapper
+│   │   ├── PromptModal.ts      # Text input
+│   │   ├── YesNoModal.ts       # Confirmation
+│   │   └── LiveScanMonitorModal.ts  # Scan session UI
+│   ├── commands/               # Advanced commands (rarely used)
+│   │   └── editConfig.ts
+│   └── utils/
+│       └── file.ts             # File operations (ensureFolder, delete, etc.)
+├── docs/                       # Documentation
+└── publish/                    # Release artifacts
+```
+
+**Key Principles**:
+- **`main.ts` is minimal**: Only lifecycle, command registration, and high-level coordination
+- **Services are stateless**: No UI imports, pure business logic
+- **UI components are modals**: All user interaction via Modal subclasses
+- **Settings in SettingTab**: One source of truth for data model + UI
+- **Utils are pure functions**: No app/plugin dependencies
+
+**Do Not**:
+- Put business logic in `main.ts` (delegate to services)
+- Import UI components in services (pass data, not modals)
+- Commit build artifacts (`main.js`, `node_modules/`)
+- Create large files (split at ~300 lines)
 
 ## Manifest rules (`manifest.json`)
 
@@ -144,94 +167,262 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Don't assume desktop-only behavior unless `isDesktopOnly` is `true`.
 - Avoid large in-memory structures; be mindful of memory and storage constraints.
 
-## Agent do/don't
+## Project-Specific Context
 
-**Do**
-- Add commands with stable IDs (don't rename once released).
-- Provide defaults and validation in settings.
-- Write idempotent code paths so reload/unload doesn't leak listeners or intervals.
-- Use `this.register*` helpers for everything that needs cleanup.
+### This Plugin's Domain
+- **Course management** for academic note-taking (university students)
+- **Desktop-only**: Uses Node.js `fs` module for PDF scanning
+- **Settings storage**: Plugin data (`.obsidian/plugins/jinxx-tools/data.json`), not external JSON
+- **UI pattern**: Heavy use of modal-based interactions (no sidebars or custom views)
+- **Dependencies**: `pdf-lib` for PDF manipulation (no external services)
 
-**Don't**
-- Introduce network calls without an obvious user-facing reason and documentation.
-- Ship features that require cloud services without clear disclosure and explicit opt-in.
-- Store or transmit vault contents unless essential and consented.
+### Code Organization Rules
 
-## Common tasks
+**Services** (`src/services/`):
+- Stateless business logic
+- NO UI imports (no `Modal`, `Notice`, etc.)
+- Return result objects: `{ ok: boolean; reason?: string; ...data }`
+- Example: `CourseService`, `ScanService`, `ConfigService`
 
-### Organize code across multiple files
+**UI Components** (`src/ui/`):
+- Modals and interactive elements
+- Can call services but contain minimal logic
+- Always return `Promise<T | null>` (null = cancelled)
+- Example: `SimpleSuggester`, `PromptModal`, `YesNoModal`
 
-**main.ts** (minimal, lifecycle only):
+**Commands** (registered in `main.ts`):
+- Minimal implementation in command callback
+- Delegate to services immediately
+- Handle result object and show notices
+- Example: `handleAddCourse()` → `CourseService.createCourse()`
+
+**Settings** (`src/settings/SettingTab.ts`):
+- Data model (`JinxxToolsSettings` interface)
+- UI for all settings (no manual JSON editing)
+- Save immediately on change (no "Apply" button)
+
+### What NOT to Change
+
+**Breaking Changes for Users**:
+- Plugin ID: `jinxx-tools` (stable forever)
+- Command IDs: `jinxx-*` (never rename after release)
+- Settings structure: Adding fields OK, removing/renaming breaks users
+- Folder naming: `University`, `Courses`, `Notes`, `Attachments`, `Scans` (user expectations)
+
+**Architecture Patterns**:
+- Keep `main.ts` minimal (lifecycle + commands only)
+- Services never import UI
+- Modals return promises with null for cancellation
+- File operations use atomic writes (write to `.tmp`, then rename)
+
+### Testing Checklist for This Plugin
+
+When making changes, manually test:
+
+**Course Operations**:
+- [ ] Create course with/without template
+- [ ] Create with notes subfolder layout
+- [ ] Delete course (verify all folders removed)
+- [ ] Archive course (verify timestamped snapshot)
+- [ ] Restore course (verify conflict resolution)
+- [ ] Rename course (verify all folders renamed)
+
+**Scanning Workflow**:
+- [ ] Start scan session → scan documents → end session
+- [ ] Live monitoring modal shows detected files
+- [ ] Reorder files → verify page order in output
+- [ ] Merge to new PDF → verify output
+- [ ] Append to existing PDF → verify appended
+- [ ] Archive originals (if enabled) → verify moved
+
+**Settings**:
+- [ ] Edit base folders → reload → verify persisted
+- [ ] Add/remove notes subfolder options
+- [ ] Add/remove course templates
+- [ ] Add/remove watch folders
+
+**Interactive Flows**:
+- [ ] Manage Courses loop (list → select → action → return)
+- [ ] Template selection with preview
+- [ ] Collision handling (archive/rename existing)
+
+### Key Dependencies
+
+**Runtime**:
+- `pdf-lib@^1.17.1`: PDF merging and manipulation (bundled)
+- Node.js `fs`: File system operations for scanning (desktop-only)
+- Obsidian Vault API: All vault file operations
+
+**Optional Integration**:
+- Templater plugin: Auto-render template variables (best-effort, no error if missing)
+
+### Common Pitfalls
+
+1. **Don't show "Cancelled" errors**: Users expect no notice when they cancel
+   ```ts
+   if (res.reason !== 'cancelled') {
+     new Notice(`Failed: ${res.reason}`);
+   }
+   ```
+
+2. **Always use atomic writes for files**:
+   ```ts
+   await writeFile(`${path}.tmp`, data);
+   await rename(`${path}.tmp`, path);
+   ```
+
+3. **Delete folders deepest-first**: Use `deleteFolderRecursively` helper
+
+4. **Check for null before using vault objects**:
+   ```ts
+   const folder = this.app.vault.getAbstractFileByPath(path) as TFolder | null;
+   if (!folder) return { ok: false, reason: 'folder-not-found' };
+   ```
+
+5. **Command IDs are permanent**: Never rename after release
+
+## Agent Do/Don't
+
+**Do**:
+- Add commands with stable IDs (prefix: `jinxx-`, kebab-case)
+- Delegate business logic to services immediately
+- Return result objects from services: `{ ok, reason?, ...data }`
+- Show notices only for non-cancelled errors
+- Use helpers: `SimpleSuggester`, `PromptModal`, `YesNoModal`, `ensureFolder`
+- Write atomic (write `.tmp` → rename)
+- Test manually with the checklist above
+
+**Don't**:
+- Put business logic in `main.ts` (only coordination)
+- Import UI components in services
+- Show notices for cancelled operations
+- Rename command IDs after release
+- Change plugin ID or settings structure (breaking change)
+- Commit `main.js` or `node_modules/` to git
+- Create files >300 lines (split into smaller modules)
+
+## Common Patterns in This Project
+
+### Using SimpleSuggester (Fuzzy Picker)
 ```ts
-import { Plugin } from "obsidian";
-import { MySettings, DEFAULT_SETTINGS } from "./settings";
-import { registerCommands } from "./commands";
+import { SimpleSuggester } from './src/ui/SimpleSuggester';
 
-export default class MyPlugin extends Plugin {
-  settings: MySettings;
+const courses = ['Calculus', 'Physics', 'Chemistry'];
+const suggester = new SimpleSuggester(
+  this.app,
+  courses,
+  (c: string) => c,  // Display function
+  'Select a course'   // Placeholder
+);
 
-  async onload() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    registerCommands(this);
+const chosen = await suggester.openAndChoose();
+if (chosen) {
+  // User selected a course
+}
+```
+
+### Using PromptModal (Text Input)
+```ts
+import { PromptModal } from './src/ui/PromptModal';
+
+const modal = new PromptModal(this.app, 'Enter course name');
+const courseName = await modal.openPrompt();
+if (courseName) {
+  // User entered a name
+}
+```
+
+### Using YesNoModal (Confirmation)
+```ts
+import { YesNoModal } from './src/ui/YesNoModal';
+
+const modal = new YesNoModal(this.app, 'Are you sure you want to delete this course?');
+const confirmed = await modal.openPrompt();
+if (confirmed) {
+  // User confirmed
+}
+```
+
+### File Operations
+```ts
+import { ensureFolder, deleteFolderRecursively, buildCompactSummary } from './src/utils/file';
+
+// Ensure folder exists (creates parents recursively)
+await ensureFolder(this.app, 'University/Courses');
+
+// Delete folder recursively (files first, then folders deepest-first)
+const summary = { deletedFiles: [], deletedFolders: [], failed: [] };
+await deleteFolderRecursively(this.app, folder, summary);
+
+// Build human-readable summary
+const compact = buildCompactSummary(summary);
+new Notice(`Deleted — ${compact}`);
+```
+
+### Service Result Pattern
+```ts
+// Services return result objects
+async createCourse(): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    // ... operation logic
+    return { ok: true };
+  } catch (e) {
+    console.error('createCourse failed', e);
+    return { ok: false, reason: String(e.message || e) };
+  }
+}
+
+// UI handles results
+const res = await courseService.createCourse();
+if (res.ok) {
+  new Notice('Course created successfully');
+} else if (res.reason !== 'cancelled') {
+  // Don't show error for user cancellations
+  new Notice(`Failed: ${res.reason}`);
+}
+```
+
+### Adding a Command
+```ts
+// In main.ts onload()
+this.addCommand({
+  id: 'jinxx-your-command',      // NEVER change after release
+  name: 'Your Command',
+  callback: async () => {
+    await this.handleYourCommand();
+  }
+});
+
+// Handler method (delegate to service)
+async handleYourCommand() {
+  const service = new CourseService(this);
+  const res = await service.yourOperation();
+  if (res.ok) {
+    new Notice('Success');
+  } else if (res.reason !== 'cancelled') {
+    new Notice(`Failed: ${res.reason}`);
   }
 }
 ```
 
-**settings.ts**:
+### Settings Pattern
 ```ts
-export interface MySettings {
-  enabled: boolean;
-  apiKey: string;
-}
+// In SettingTab.display()
+new Setting(containerEl)
+  .setName('Your Setting')
+  .setDesc('Description of what this does')
+  .addText((text) =>
+    text
+      .setValue(this.plugin.settings.yourSetting)
+      .onChange(async (value) => {
+        this.plugin.settings.yourSetting = value;
+        await this.plugin.saveSettings();
+      })
+  );
 
-export const DEFAULT_SETTINGS: MySettings = {
-  enabled: true,
-  apiKey: "",
-};
-```
-
-**commands/index.ts**:
-```ts
-import { Plugin } from "obsidian";
-import { doSomething } from "./my-command";
-
-export function registerCommands(plugin: Plugin) {
-  plugin.addCommand({
-    id: "do-something",
-    name: "Do something",
-    callback: () => doSomething(plugin),
-  });
-}
-```
-
-### Add a command
-
-```ts
-this.addCommand({
-  id: "your-command-id",
-  name: "Do the thing",
-  callback: () => this.doTheThing(),
-});
-```
-
-### Persist settings
-
-```ts
-interface MySettings { enabled: boolean }
-const DEFAULT_SETTINGS: MySettings = { enabled: true };
-
-async onload() {
-  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-  await this.saveData(this.settings);
-}
-```
-
-### Register listeners safely
-
-```ts
-this.registerEvent(this.app.workspace.on("file-open", f => { /* ... */ }));
-this.registerDomEvent(window, "resize", () => { /* ... */ });
-this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
+// Access in services
+const config = await this.cfg.readConfig();
+const value = config.yourSetting;
 ```
 
 ## Troubleshooting

@@ -5,13 +5,37 @@ import { JinxxToolsSettings, DEFAULT_SETTINGS, JinxxToolsSettingTab } from './sr
 import { ScanService } from './src/services/ScanService';
 import { LiveScanMonitorModal } from './src/ui/LiveScanMonitorModal';
 import { PromptModal } from './src/ui/PromptModal';
+import { ConfigService } from './src/services/ConfigService';
+import type { JinxxToolsAPI } from './src/api/PublicAPI';
+import { JinxxToolsAPIImpl } from './src/api/APIImpl';
 import * as path from 'path';
 
 export default class JinxxToolsPlugin extends Plugin {
 	settings: JinxxToolsSettings;
 
+	/**
+	 * Public API for external plugins to access Jinxx Tools functionality.
+	 * 
+	 * Other plugins can access this API via:
+	 * ```typescript
+	 * const jinxxTools = this.app.plugins.plugins['jinxx-tools'] as any;
+	 * if (jinxxTools?.api) {
+	 *   const folders = jinxxTools.api.getBaseFolders();
+	 *   console.log('Courses path:', folders.fullCoursesPath);
+	 * }
+	 * ```
+	 * 
+	 * @public
+	 */
+	public api: JinxxToolsAPI | undefined;
+
 	async onload() {
 		await this.loadSettings();
+
+		// Initialize public API
+		const configService = new ConfigService(this);
+		const courseService = new CourseService(this);
+		this.api = new JinxxToolsAPIImpl(this.app, configService, courseService);
 
 		// Main command: Manage Courses
 		this.addCommand({
